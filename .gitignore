@@ -208,3 +208,8 @@ __marimo__/
 
 extracted_frames/
 preprocessed_512jpg/
+
+preprocessed_augmentation_512jpg/
+.vscode/
+
+

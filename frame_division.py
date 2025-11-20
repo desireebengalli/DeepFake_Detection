@@ -12,32 +12,26 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Config & Paths
 # =========================
 
-# Radice del dataset (usa il tuo path)
+# Radice del dataset
 ROOT = "/home/giadapoloni/dataset"
 
-# Directory da processare (assolute) con label associata
-# Usa {ROOT} come base.
+# Directory da processare con label associata
 TARGET_DIRS: List[Tuple[str, str]] = [
-    (f"{ROOT}/original_sequences/youtube/c23/videos",            "original"),
-    (f"{ROOT}/manipulated_sequences/Deepfakes/c23/videos",       "Deepfakes"),
-    (f"{ROOT}/manipulated_sequences/Face2Face/c23/videos",       "Face2Face"),
-    (f"{ROOT}/manipulated_sequences/FaceSwap/c23/videos",        "FaceSwap"),
-    (f"{ROOT}/manipulated_sequences/NeuralTextures/c23/videos",  "NeuralTextures"),
+    # (f"{ROOT}/Celeb-real", "original"),
+    (f"{ROOT}", "fake"),
 ]
-
-
 
 # Dove scrivere i frame
 # OUT/real_ff/<video_id>/001.jpg
-# OUT/fake_ff/<method>/<video_id>/001.jpg
-OUT             = Path("/home/giadapoloni/extracted_frames")
+# OUT/fake_ff/<method>/<video_id>/001.jpg  (qui method = "fake")
+OUT = Path("/home/giadapoloni/C_extracted_frames/C_fake")
 
 FRAMES_TARGET   = 32
 MIN_FRAMES_OK   = 16
 
 # Azioni su file
-DRY_RUN = False
-USE_TRASH       = False                     # True → sposta i video in TRASH_DIR invece di cancellarli
+DRY_RUN         = False
+USE_TRASH       = False
 TRASH_DIR       = Path("trash_videos")
 
 # Parallelismo
@@ -45,16 +39,16 @@ WORKERS = min(4, (os.cpu_count() or 4))
 FFMPEG_THREADS_PER_PROC = 1
 
 # Formato immagini
-IMG_EXT        = ".jpg"      # ".jpg" o ".webp"
-JPEG_QSCALE    = "3"         # 2–5 tipico (più alto = più compresso)
+IMG_EXT        = ".jpg"
+JPEG_QSCALE    = "3"       # 2–5 tipico (più alto = più compresso)
 WEBP_QUALITY   = "85"
 
 # Accelerazione HW (decodifica)
 USE_HWACCEL       = False
 HWACCEL_BACKEND   = "None"   # "cuda", "vaapi", "auto", oppure "None"
 
-# Estensioni video considerate (tuple vera, non stringa)
-VIDEO_EXTS = (".mp4",)
+# Estensioni video considerate
+VIDEO_EXTS = (".mp4", ".MP4")
 
 # =========================
 # Helpers
@@ -64,20 +58,21 @@ def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
 
 def list_videos_in_dir(dir_path: str) -> List[str]:
+    """Restituisce la lista di video (non ricorsiva) in dir_path."""
     paths: List[str] = []
     if not os.path.isdir(dir_path):
         print(f"[WARN] Directory non trovata: {dir_path}")
         return paths
     for ext in VIDEO_EXTS:
-        pattern = os.path.join(dir_path, "", f"*{ext}")
-        paths += glob.glob(pattern, recursive=True)
+        pattern = os.path.join(dir_path, f"*{ext}")
+        paths += glob.glob(pattern)
     return sorted(paths)
 
 def vid_id_from_path(p: str) -> str:
     return Path(p).stem
 
 def slugify(label: str) -> str:
-    """minuscolo + solo a-z0-9- (es. 'Face2Face' -> 'face2face')"""
+    """minuscolo + solo a-z0-9-"""
     s = label.strip().lower()
     s = re.sub(r"[^a-z0-9]+", "-", s)
     s = re.sub(r"-+", "-", s).strip("-")
@@ -103,14 +98,10 @@ def safe_remove(video_path: str):
         print(f"[REMOVED] {video_path}")
 
 def out_subdir_for(label: str) -> Path:
-    """
-    Mappa le label in cartelle di output:
-    - 'original' → OUT/real_ff
-    - altrimenti → OUT/fake_ff/<slug(label)>
-    """
+    """Mappa le label in cartelle di output."""
     if label.lower() == "original":
-        return OUT / "real_ff"
-    return OUT / "fake_ff" / slugify(label)
+        return OUT / "C_real"
+    return OUT / "C_fake" #/ slugify(label)
 
 # =========================
 # FFmpeg utils
@@ -128,7 +119,7 @@ def video_duration(video: str) -> Optional[float]:
         return None
 
 def extract_uniform_n(video: str, dst_dir: Path, n: int) -> int:
-    """Estrae ~n frame uniformi, li porta a 512x512 RGB e salva come JPG/WebP."""
+    """Estrae ~n frame uniformi, li porta a 512x512 e salva come JPG/WebP."""
     ensure_dir(dst_dir)
     dur = video_duration(video)
     fps = 1 if not dur or dur <= 0 else max(n / dur, 1e-3)
@@ -148,7 +139,6 @@ def extract_uniform_n(video: str, dst_dir: Path, n: int) -> int:
             cmd += ["-hwaccel", "auto"]
             vf_chain_prefix = ""
 
-    # pipeline: sampling uniforme -> resize mantenendo AR -> pad a 512 -> converti in RGB
     vf_chain = (
         f"{vf_chain_prefix}"
         f"fps={fps},"
@@ -165,13 +155,11 @@ def extract_uniform_n(video: str, dst_dir: Path, n: int) -> int:
         "-frames:v", str(n),
     ]
 
-    # qualità in base al formato di output
     if IMG_EXT.lower() in (".jpg", ".jpeg"):
         cmd += ["-qscale:v", JPEG_QSCALE]
     elif IMG_EXT.lower() == ".webp":
         cmd += ["-quality", WEBP_QUALITY]
 
-    # limita i thread interni se stai parallelizzando più processi ffmpeg
     cmd += ["-threads", str(FFMPEG_THREADS_PER_PROC), out_pattern]
 
     subprocess.run(cmd, check=True)
@@ -185,7 +173,10 @@ def process_dir(dir_path: str, label: str):
     videos = list_videos_in_dir(dir_path)
     base_out = out_subdir_for(label)
     ensure_dir(base_out)
-    stats = {"ok": 0, "skip_existing": 0, "auto_deleted_existing": 0, "warn": 0, "err": 0}
+    stats = {}
+
+    def bump(key: str):
+        stats[key] = stats.get(key, 0) + 1
 
     def one(vpath: str):
         dst = base_out / vid_id_from_path(vpath)
@@ -211,8 +202,8 @@ def process_dir(dir_path: str, label: str):
                 print(f"[WARN] {vpath}: wrote only {wrote} frames (<{MIN_FRAMES_OK}), keeping video.")
                 return ("warn", vpath)
 
-        except subprocess.CalledProcessError:
-            print(f"[ERROR] ffmpeg failed on {vpath}, keeping video.")
+        except subprocess.CalledProcessError as e:
+            print(f"[ERROR] ffmpeg failed on {vpath}, keeping video. {e}")
             return ("err", vpath)
         except Exception as e:
             print(f"[ERROR] {vpath}: {e}, keeping video.")
@@ -226,13 +217,12 @@ def process_dir(dir_path: str, label: str):
         futures = [ex.submit(one, vv) for vv in videos]
         for fut in as_completed(futures):
             status, v = fut.result()
-            if status not in stats:
-                stats[status] = 0
-            stats[status] += 1
+            bump(status)
             print(f"[{label}] {status}: {v}")
 
     total = len(videos)
-    print(f"[SUMMARY {label}] total={total} " + " ".join(f"{k}={v}" for k, v in stats.items()))
+    summary = " ".join(f"{k}={v}" for k, v in sorted(stats.items()))
+    print(f"[SUMMARY {label}] total={total} {summary}")
 
 # =========================
 # Main
@@ -245,8 +235,8 @@ def main():
 
     ext = IMG_EXT.lstrip(".")
     print("Done. Struttura output:")
-    print(f"- {OUT}/real_ff/<video_id>/001..{ext}")
-    print(f"- {OUT}/fake_ff/<method>/<video_id>/001..{ext}")
+    # print(f"- {OUT}/C_real/<video_id>/001..{ext}")
+    print(f"- {OUT}/C_fake/fake/<video_id>/001..{ext}")
     if DRY_RUN:
         print("Note: DRY_RUN=True → nessun video è stato cancellato o spostato nel cestino.")
 

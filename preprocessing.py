@@ -5,15 +5,12 @@ from pathlib import Path
 # -----------------------
 # Config
 # -----------------------
-BASE_FRAMES = "/home/giadapoloni/extracted_frames"
+BASE_FRAMES = "/home/giadapoloni/C_extracted_frames"
 IN_ROOTS = [
-    os.path.join(BASE_FRAMES, "real_ff"),
-    os.path.join(BASE_FRAMES, "fake_ff", "deepfakes"),
-    os.path.join(BASE_FRAMES, "fake_ff", "face2face"),
-    os.path.join(BASE_FRAMES, "fake_ff", "faceswap"),
-    os.path.join(BASE_FRAMES, "fake_ff", "neuraltextures"),
+    # os.path.join(BASE_FRAMES, "C_real"),
+    os.path.join(BASE_FRAMES, "C_fake"),
 ]
-OUT_ROOT = Path("/home/giadapoloni/preprocessed_frames")
+OUT_ROOT = Path("/home/giadapoloni/C_preprocessed_frames")
 OUTPUT_SIZE = 512
 MARGIN = 1.3
 DET_THRESH = 0.3
@@ -41,7 +38,7 @@ REF_5PTS_112 = np.array([
 REF_5PTS = REF_5PTS_112 * (OUTPUT_SIZE / 112.0)
 
 JPEG_PARAMS = [int(cv2.IMWRITE_JPEG_QUALITY), int(JPEG_QUALITY)]
-IMG_PATTERNS = ["*.jpg","*.jpeg","*.png","*.JPG","*.JPEG","*.PNG","*.webp"]
+IMG_PATTERNS = ["*.jpg",]
 
 def expand_square(bbox, margin, w, h):
     x1, y1, x2, y2 = bbox
@@ -80,12 +77,12 @@ def list_video_dirs(root):
     return out
 
 def _derive_root_tag(matched_root):
-    parts = os.path.normpath(matched_root).split(os.sep)
-    if parts[-1].lower() in ("real", "real_ff"):
-        return "real_ff"
-    if len(parts) >= 2 and parts[-2].lower() in ("fake", "fake_ff"):
-        return f"fake_ff/{parts[-1].lower()}"
-    return parts[-1].lower()
+    last = os.path.basename(os.path.normpath(matched_root)).lower()
+    if last in ("C_real", "real"):
+        return "C_real"
+    if last in ("C_fake", "fake"):
+        return "C_fake"
+    return last
 
 def out_dir_for(video_dir):
     matched_root = None
@@ -206,6 +203,18 @@ def main():
     if not all_vdirs:
         print("Niente da processare (tutto già fatto).")
         return
+    
+    print(f"[ROOT] {root} -> {len(vdirs)} video")
+
+    if len(vdirs) == 0:
+        print("[DEBUG] Contenuto root:", os.listdir(root)[:10])
+        # ispeziona una sottocartella a caso, se esiste
+        subs = [os.path.join(root, d) for d in os.listdir(root) if os.path.isdir(os.path.join(root,d))]
+        if subs:
+            samp = subs[0]
+            print("[DEBUG] Esempio sottocartella:", samp)
+            print("[DEBUG] Esempi file:", os.listdir(samp)[:10])
+
 
     # 4) Processo singolo (ottimo per GPU; evita contention sulla VRAM)
     total_ok = total_fail = total_vids = 0

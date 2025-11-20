@@ -45,8 +45,11 @@ def compute_rel_parent(src_path: Path, first_root: Path, strip_prefix: str) -> P
     except Exception:
         return Path(src_path.parent.name)
 
-def build_dst(out_root: Path, rel_parent: Path, base_name: str, aug_idx: int) -> Path:
-    # Manteniamo il suffisso _ctx nel basename e aggiungiamo _augXX_ctx.jpg
+def build_dst_inplace(src_path: Path, aug_idx: int) -> Path:
+    base = src_path.stem  # include _ctx
+    return src_path.parent / f"{base}_aug{aug_idx:02d}.jpg"
+
+def build_dst_outroot(out_root: Path, rel_parent: Path, base_name: str, aug_idx: int) -> Path:
     dst_dir = out_root / rel_parent
     dst_dir.mkdir(parents=True, exist_ok=True)
     return dst_dir / f"{base_name}_aug{aug_idx:02d}_ctx.jpg"
@@ -123,72 +126,76 @@ def augment_and_save(src_path: Path, out_root: Path, variants: int, jpg_quality:
 # CLI
 # -------------------------
 def parse_args():
-    ap = argparse.ArgumentParser(description="Augment ONLY *_ctx.jpg (CPU, torchvision/PIL). Output names match GPU script.")
+    ap = argparse.ArgumentParser(description="Augment ONLY *_ctx.jpg (CPU).")
     ap.add_argument("--in-roots", nargs="+", required=True,
-                    help="One or more roots to recursively search for *_ctx.jpg.")
-    ap.add_argument("--out-root", required=True,
-                    help="Root where augmented images are written (same hierarchy).")
-    ap.add_argument("--variants-per-image", type=int, default=2,
-                    help="Number of variants per *_ctx.jpg (default: 2).")
-    ap.add_argument("--jpg-quality", type=int, default=92,
-                    help="JPEG quality for saving (default: 92).")
-    ap.add_argument("--batch-size", type=int, default=64,
-                    help="(Kept for compatibility; not used in CPU pipeline).")
-    ap.add_argument("--workers", type=int, default=min(8, (os.cpu_count() or 8)),
-                    help="Number of CPU threads for encode/I-O (default: 8).")
-    ap.add_argument("--seed", type=int, default=1234, help="Random seed.")
-    ap.add_argument("--strip-prefix", type=str, default="",
-                    help="Optional path prefix to strip to build relative outputs.")
-    ap.add_argument("--use-gpu", action="store_true",
-                    help="Accepted for compatibility; ignored (CPU pipeline).")
-    ap.add_argument("--progress", action="store_true",
-                    help="Show a live progress bar with ETA.")
-    ap.add_argument("--skip-existing", action="store_true",
-                    help="Skip files that already exist (resume).")
+                    help="Una o più radici da cui cercare ricorsivamente *_ctx.jpg.")
+    ap.add_argument("--out-root", default="", help="Root di output (ignorata se --in-place).")
+    ap.add_argument("--in-place", action="store_true",
+                    help="Scrive i file augmented nella STESSA cartella del sorgente.")
+    ap.add_argument("--variants-per-image", type=int, default=2)
+    ap.add_argument("--jpg-quality", type=int, default=92)
+    ap.add_argument("--workers", type=int, default=min(8, (os.cpu_count() or 8)))
+    ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--progress", action="store_true")
+    ap.add_argument("--skip-existing", action="store_true")
     return ap.parse_args()
 
 # -------------------------
 # Main
 # -------------------------
+
 def main():
     args = parse_args()
     random.seed(args.seed)
-    np_rng = np.random.default_rng(args.seed)
-
-    in_roots = [Path(p).resolve() for p in args.in_roots]
-    out_root = Path(args.out_root).resolve()
-    out_root.mkdir(parents=True, exist_ok=True)
+    np.random.seed(args.seed)
 
     imgs = scan_ctx_images(args.in_roots)
-    print(f"[INFO] Found {len(imgs)} *_ctx images across {len(args.in_roots)} roots.")
-    if not imgs:
-        return
+    print(f"[INFO] Found {len(imgs)} *_ctx images in {len(args.in_roots)} root(s).")
+    if not imgs: return
 
-    if args.use_gpu:
-        print("[INFO] --use-gpu specified, but this implementation runs on CPU (torchvision/PIL).")
+    out_root = Path(args.out_root).resolve() if args.out_root else None
+    if not args.in_place:
+        if out_root is None:
+            raise SystemExit("--out-root è richiesto se non usi --in-place.")
+        out_root.mkdir(parents=True, exist_ok=True)
 
     aug = make_aug_pipeline()
-
     total_ops = len(imgs) * args.variants_per_image
     pbar = tqdm(total=total_ops, unit="img", disable=not args.progress)
 
+    def worker(src: Path):
+        try:
+            from PIL import Image
+            img = Image.open(src).convert("RGB")
+        except Exception:
+            return 0
+        base = src.stem  # include _ctx
+        written = 0
+        for k in range(args.variants_per_image):
+            if args.in_place:
+                dst = build_dst_inplace(src, k)
+            else:
+                # costruzione gerarchia relativa rispetto alla prima root
+                first_root = Path(args.in_roots[0]).resolve()
+                try:
+                    rel_parent = src.parent.resolve().relative_to(first_root)
+                except Exception:
+                    rel_parent = Path(src.parent.name)
+                dst = build_dst_outroot(out_root, rel_parent, base, k)
+            if dst.exists() and args.skip_existing:
+                continue
+            out_img = aug(img)
+            out_img.save(dst, format="JPEG", quality=int(args.jpg_quality))
+            written += 1
+        return written
+
     total_written = 0
     with ThreadPoolExecutor(max_workers=int(args.workers)) as pool:
-        futures = []
-        for p in imgs:
-            futures.append(pool.submit(
-                augment_and_save, p, out_root, int(args.variants_per_image), int(args.jpg_quality),
-                in_roots, args.strip_prefix, aug
-            ))
-        for fut in as_completed(futures):
-            written = fut.result()
-            total_written += written
-            # anche gli skipped avanzano la barra
+        for w in as_completed(pool.submit(worker, p) for p in imgs):
+            total_written += w.result()
             pbar.update(args.variants_per_image)
-
     pbar.close()
-    print(f"[SUMMARY] source images: {len(imgs)} | variants requested: {args.variants_per_image}")
-    print(f"[SUMMARY] files actually written: {total_written} | output: {out_root}")
+    print(f"[SUMMARY] written: {total_written} | in_place={args.in_place} | out_root={out_root if out_root else '-'}")
 
 if __name__ == "__main__":
     main()

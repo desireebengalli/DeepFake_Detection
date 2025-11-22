@@ -42,7 +42,7 @@ IS_CUDA = (DEVICE == "cuda")
 DATA_DIR = "/home/giadapoloni/preprocessed_frames"
 TEST_REAL_DIR = "/home/giadapoloni/C_validation/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_validation/C_fake"
-RESULTS_DIR = "/home/giadapoloni/results/"
+RESULTS_DIR = "/home/giadapoloni/results/CLIP1_B16"
 RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip_test_metrics_global.csv")
 SAVE_PATH = os.path.join(RESULTS_DIR, "clip_deepfake_FAST_T4.pt")
 

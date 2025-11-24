@@ -44,14 +44,15 @@ IS_CUDA = (DEVICE == "cuda")
 DATA_DIR = "/home/giadapoloni/preprocessed_frames"
 TEST_REAL_DIR = "/home/giadapoloni/C_validation/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_validation/C_fake"
-RESULTS_DIR = "/home/giadapoloni/results/CLIP1_B16_linear"
-RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip_test_metrics_global_linear.csv")
-RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip_test_metrics_video_linear.csv")
+RESULTS_DIR = "/home/giadapoloni/results/CLIP2_B16_linear"
+RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip2_test_metrics_global.csv")
+RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip2_test_metrics_video.csv")
 SAVE_PATH = os.path.join(RESULTS_DIR, "clip_linear.pt")
 
 # AMP: FP16 per T4 (solo se CUDA)
 amp_dtype = torch.float16
-scaler = torch.cuda.amp.GradScaler(enabled=IS_CUDA)
+# scaler = torch.cuda.amp.GradScaler(enabled=IS_CUDA)
+scaler = torch.amp.GradScaler(device='cuda', enabled=IS_CUDA)
 
 # wrapper per autocast che si disattiva automaticamente su CPU
 def autocast_ctx():
@@ -263,7 +264,9 @@ def train_and_eval():
                 z = F.normalize(clip_model.encode_image(imgs), dim=-1)
                 logits_sup = head(z)
                 logits_txt = clip_model.logit_scale.exp() * (z @ text_bank.t())
-                loss = 0.4*ce(logits_sup, y) + 0.4*ce(logits_txt, y) + 0.2*supervised_contrastive_loss(z, y)
+                loss_cls = alpha_sup * ce(logits_sup, y) + (1 - alpha_sup) * ce(logits_txt, y)
+                loss = 0.8 * loss_cls + 0.2 * supervised_contrastive_loss(z, y)
+
 
             # gradient accumulation + scaler
             if IS_CUDA:

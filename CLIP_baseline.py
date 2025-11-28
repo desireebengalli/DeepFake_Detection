@@ -27,16 +27,16 @@ from sklearn.metrics import roc_auc_score
 # ---------- CONFIG per T4 / training ----------
 
 MODEL_NAME = "ViT-B/16"
-EPOCHS = 20
+EPOCHS = 5
 BATCH_SIZE = 16
 ACCUM_STEPS = 8             # effettivo 128
 NUM_WORKERS = 4
 
 # LRs e scheduler: LR basso + warmup + cosine decay
-BASE_LR = 5e-5              # LR massimo
-MIN_LR = 1e-6               # LR minimo a fine training
-WARMUP_RATIO = 0.05         # 5% dei passi in warmup
-WEIGHT_DECAY = 0.0          # niente weight decay
+BASE_LR = 3e-4             # LR massimo
+MIN_LR = 1e-5              # LR minimo a fine training
+WARMUP_RATIO = 0.05      # 0% dei passi in warmup
+WEIGHT_DECAY = 0          # niente weight decay
 
 USE_WEIGHTED_SAMPLER = False
 USE_CLASS_WEIGHTS = False   # paper non fa reweight esplicito
@@ -45,7 +45,7 @@ VIDEO_DECISION_THRESHOLD = 0.5
 SEED = 1
 
 # Early stopping: fermati se per 2 epoche di fila non migliora
-PATIENCE = 2          # 2 epoche consecutive senza miglioramento
+PATIENCE = 6          # 2 epoche consecutive senza miglioramento
 MIN_DELTA = 0.0       # qualunque miglioramento > 0 vale come "improved"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -214,7 +214,7 @@ def build_test_loader(preprocess):
 
 def build_optimizer_and_scheduler(head, tuned_params, total_steps):
     params = list(head.parameters()) + [p for p in tuned_params if p.requires_grad]
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         params,
         lr=BASE_LR,
         betas=(0.9, 0.999),
@@ -227,8 +227,10 @@ def build_optimizer_and_scheduler(head, tuned_params, total_steps):
     def lr_mult(step):
         # step parte da 0, ma scheduler usa il numero di chiamate
         if step < warmup_steps:
-            # da ~0 a 1
-            return float(step + 1) / float(warmup_steps)
+            # LR parte da MIN_LR e sale linearmente fino a BASE_LR
+            warmup_factor = float(step + 1) / float(warmup_steps)
+            return (MIN_LR / BASE_LR) + (1.0 - MIN_LR / BASE_LR) * warmup_factor
+
         # parte di decay
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
         cos_factor = 0.5 * (1 + math.cos(math.pi * progress))  # 1 -> 0
@@ -242,7 +244,6 @@ def build_optimizer_and_scheduler(head, tuned_params, total_steps):
     )
     return optimizer, scheduler
 
-@torch.no_grad()
 def extract_features(clip_model, imgs):
     # encode_image di CLIP produce già feature "quasi" normalizzate,
     # applichiamo comunque L2 norm esplicita per seguire il paper.
@@ -252,7 +253,8 @@ def extract_features(clip_model, imgs):
 
 @torch.no_grad()
 def predict_batch(clip_model, head, imgs):
-    z = extract_features(clip_model, imgs)
+    z = clip_model.encode_image(imgs)
+    z = F.normalize(z, dim=-1)
     logits = head(z)
     return logits
 

@@ -21,7 +21,7 @@ from sklearn.metrics import roc_auc_score
 
 # ---------- CONFIG per T4 ----------
 MODEL_NAME = "ViT-B/16"     # cambiato da ViT-L/14 a ViT-B/16
-EPOCHS = 10
+EPOCHS = 1
 BATCH_SIZE = 16
 ACCUM_STEPS = 8            # effettivo 128
 NUM_WORKERS = 4
@@ -44,10 +44,10 @@ IS_CUDA = (DEVICE == "cuda")
 DATA_DIR = "/home/giadapoloni/preprocessed_frames"
 TEST_REAL_DIR = "/home/giadapoloni/C_validation/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_validation/C_fake"
-RESULTS_DIR = "/home/giadapoloni/results/CLIP1_B16_cosine"
-RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip_test_metrics_global.csv")
-RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip_test_metrics_video.csv")
-SAVE_PATH = os.path.join(RESULTS_DIR, "clip_cosine.pt")
+RESULTS_DIR = "/home/default/results/CLIP1_B16_cosine"
+RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip_test_metrics_global_base.csv")
+RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip_test_metrics_video_base.csv")
+SAVE_PATH = os.path.join(RESULTS_DIR, "clip_cosine_base.pt")
 
 # AMP: FP16 per T4 (solo se CUDA)
 amp_dtype = torch.float16

@@ -21,14 +21,14 @@ import clip
 MODEL_NAME = "ViT-B/16"
 
 # checkpoint saved by the cosine+LN training script
-CKPT_PATH = "/home/default/results/CLIP1_Baseline/clip_cosine_ln_learnscale.pt"
+CKPT_PATH = "/home/giadapoloni/results2/CLIP3_baseline_cosine/clip_baseline_cosine.pt"
 
 # test directories (frames)
 TEST_REAL_DIR = "/home/giadapoloni/C_test/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_test/C_fake"
 
 # where to save metrics
-RESULTS_DIR = "/home/default/results/CLIP1_Baseline/test_cosine_ln_learnscale"
+RESULTS_DIR = "/home/giadapoloni/results_TEST/CLIP3_cosine_notext/test_cosine_ln_learnscale"
 RESULTS_CSV_FRAME = os.path.join(
     RESULTS_DIR, "clip_test_metrics_global_cosine_ln_learnscale_frame.csv"
 )

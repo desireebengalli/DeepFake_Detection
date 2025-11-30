@@ -1,4 +1,4 @@
-import os, math, random, numpy as np, pandas as pd
+import os, numpy as np, pandas as pd
 from pathlib import Path
 from PIL import Image
 from tqdm.auto import tqdm
@@ -10,60 +10,51 @@ from collections import defaultdict
 from sklearn.metrics import roc_auc_score
 
 
-# CONFIG
+# CONFIG 
 
 MODEL_NAME = "ViT-B/16"
 
-CKPT_PATH = "/home/liciabordignion/results2/CLIP4_cosine_ln_with_text/clip4_cosine_ln_with_text.pt"
+CKPT_PATH = "/home/liciabordignion/results2/CLIP2_linear_ln_with_text/clip2_linear_ln_with_text.pt"
 
 TEST_REAL_DIR = "/home/giadapoloni/C_test/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_test/C_fake"
 
-RESULTS_DIR = "/home/liciabordignion/results2/CLIP4_cosine_ln_with_text/test"
-RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip4_test_metrics_global_cosine_ln_with_text_frame.csv")
-RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip4_test_metrics_video_cosine_ln_with_text_video.csv")
+RESULTS_DIR = "/home/giadapoloni/results_TEST/CLIP2_linear_ln_with_text"
+RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip2_test_metrics_global_linear_ln_with_text_frame.csv")
+RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip2_test_metrics_video_linear_ln_with_text_video.csv")
 
 VIDEO_DECISION_THRESHOLD = 0.5
 BATCH_SIZE = 64
 NUM_WORKERS = 4
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-IS_CUDA = DEVICE == "cuda"
+IS_CUDA = (DEVICE == "cuda")
 
 IMG_EXTS = {".jpg"}
 
 amp_dtype = torch.float16
-scaler = torch.amp.GradScaler(device="cuda", enabled=IS_CUDA)
-
 
 def autocast_ctx():
     if IS_CUDA:
         return torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=True)
-
     class _NullCtx:
         def __enter__(self): pass
         def __exit__(self, exc_type, exc, tb): pass
-
     return _NullCtx()
 
 
-# COSINE HEAD
+# LINEAR HEAD
 
-class CosineHead(nn.Module):
+class LinearHead(nn.Module):
     """
-    Cosine classifier: normalizza i pesi e usa uno scale learnable.
-    Input atteso: z già normalizzato (F.normalize).
+    Linear classifier
     """
-    def __init__(self, in_dim, n_classes=2, init_scale=16.0):
+    def __init__(self, in_dim, n_classes=2):
         super().__init__()
-        self.W = nn.Parameter(torch.randn(in_dim, n_classes))  # [D, C]
-        nn.init.normal_(self.W, std=0.02)
-        self.scale = nn.Parameter(torch.tensor(float(init_scale)), requires_grad=True)
+        self.fc = nn.Linear(in_dim, n_classes)
 
-    def forward(self, z):  # z: [B, D] (già normalizzato)
-        Wn = F.normalize(self.W, dim=0)         # [D, C]
-        logits = self.scale * (z @ Wn)          # [B, C]
-        return logits
+    def forward(self, x):
+        return self.fc(x)
 
 
 # DATASET
@@ -72,10 +63,11 @@ def collect_test_items(real_dir, fake_dir):
     items = []
     for root, label in [(real_dir, 0), (fake_dir, 1)]:
         rroot = Path(root)
-        if rroot.exists():
-            for p in sorted(rroot.rglob("*")):
-                if p.is_file() and p.suffix.lower() in IMG_EXTS:
-                    items.append({"path": p, "label": label})
+        if not rroot.exists():
+            continue
+        for p in sorted(rroot.rglob("*")):
+            if p.is_file() and p.suffix.lower() in IMG_EXTS:
+                items.append({"path": p, "label": label})
     return items
 
 
@@ -99,7 +91,7 @@ def build_test_loader(preprocess):
     if len(test_items) == 0:
         raise RuntimeError(f"No frames found in {TEST_REAL_DIR} and {TEST_FAKE_DIR}")
     ds = TestFrameDataset(test_items, preprocess)
-    persistent = NUM_WORKERS > 0
+    persistent = (NUM_WORKERS > 0)
     return DataLoader(
         ds,
         batch_size=BATCH_SIZE,
@@ -143,7 +135,7 @@ def predict_batch(clip_model, head, text_bank, imgs, alpha_sup=0.7):
     return logits
 
 
-# EVALUATION
+# EVALUATION (frame + video) 
 
 @torch.no_grad()
 def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0.5, verbose=False):
@@ -304,9 +296,9 @@ def main():
     for p in clip_model.parameters():
         p.requires_grad = False
 
-    # build head and load weights
+    # build linear head and load weights
     embed_dim = clip_model.visual.output_dim
-    head = CosineHead(embed_dim, n_classes=2, init_scale=16.0).to(DEVICE)
+    head = LinearHead(embed_dim, 2).to(DEVICE)
     head.load_state_dict(ckpt["head"])
 
     # build text bank
@@ -317,13 +309,8 @@ def main():
 
     # evaluate
     frame_metrics, video_metrics = evaluate(
-        clip_model,
-        head,
-        test_loader,
-        DEVICE,
-        text_bank,
-        video_threshold=VIDEO_DECISION_THRESHOLD,
-        verbose=True,
+        clip_model, head, test_loader, DEVICE, text_bank,
+        video_threshold=VIDEO_DECISION_THRESHOLD, verbose=True
     )
 
     # save CSVs

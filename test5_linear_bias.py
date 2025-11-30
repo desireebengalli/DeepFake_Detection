@@ -14,14 +14,14 @@ from sklearn.metrics import roc_auc_score
 
 MODEL_NAME = "ViT-B/16"
 
-CKPT_PATH = "/home/liciabordignion/results2/CLIP4_cosine_ln_with_text/clip4_cosine_ln_with_text.pt"
+CKPT_PATH = "/home/giadapoloni/results2/CLIP5_ln_bias_linear_notext/clip5_linear_ln_bias_notext.pt"
 
 TEST_REAL_DIR = "/home/giadapoloni/C_test/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_test/C_fake"
 
-RESULTS_DIR = "/home/liciabordignion/results2/CLIP4_cosine_ln_with_text/test"
-RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip4_test_metrics_global_cosine_ln_with_text_frame.csv")
-RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip4_test_metrics_video_cosine_ln_with_text_video.csv")
+RESULTS_DIR = "/home/giadapoloni/results_TEST/CLIP5_ln_bias_linear_notext/"
+RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip5_test_metrics_global_cosine_ln_with_text_frame.csv")
+RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip5_test_metrics_video_cosine_ln_with_text_video.csv")
 
 VIDEO_DECISION_THRESHOLD = 0.5
 BATCH_SIZE = 64
@@ -43,23 +43,15 @@ def autocast_ctx():
     return _NullCtx()
 
 
-# COSINE HEAD
+# Linear HEAD
 
-class CosineHead(nn.Module):
-    """
-    Cosine classifier: normalizza i pesi e usa uno scale learnable.
-    Input atteso: z già normalizzato (F.normalize).
-    """
-    def __init__(self, in_dim, n_classes=2, init_scale=16.0):
+class LinearHead(nn.Module):
+    def __init__(self, in_dim, n_classes=2):
         super().__init__()
-        self.W = nn.Parameter(torch.randn(in_dim, n_classes))  # [D, C]
-        nn.init.normal_(self.W, std=0.02)
-        self.scale = nn.Parameter(torch.tensor(float(init_scale)), requires_grad=True)
+        self.fc = nn.Linear(in_dim, n_classes)
 
-    def forward(self, z):  # z: [B, D] (già normalizzato)
-        Wn = F.normalize(self.W, dim=0)         # [D, C]
-        logits = self.scale * (z @ Wn)          # [B, C]
-        return logits
+    def forward(self, z):
+        return self.fc(z)
 
 
 # DATASET
@@ -296,10 +288,10 @@ def main():
     for p in clip_model.parameters():
         p.requires_grad = False
 
-    # build head and load weights
     embed_dim = clip_model.visual.output_dim
-    head = CosineHead(embed_dim, n_classes=2, init_scale=16.0).to(DEVICE)
-    head.load_state_dict(ckpt["head"])
+    head = LinearHead(embed_dim, n_classes=2).to(DEVICE)
+    head.load_state_dict(ckpt["head"])  # this will now match fc.weight, fc.bias
+
 
     # build text bank
     text_bank = build_text_bank(clip_model, DEVICE)

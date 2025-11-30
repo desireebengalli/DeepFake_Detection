@@ -1,52 +1,64 @@
-import os
-import numpy as np
-import pandas as pd
-
+import os, numpy as np, pandas as pd
 from pathlib import Path
-from collections import defaultdict
+from PIL import Image
 from tqdm.auto import tqdm
+
+import torch, torch.nn as nn, torch.nn.functional as F
+from torch.utils.data import DataLoader, Dataset
+import clip
+from collections import defaultdict
 from sklearn.metrics import roc_auc_score
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-
-from PIL import Image
-import clip
-
-
+# =========================
 # CONFIG
+# =========================
 
 MODEL_NAME = "ViT-B/16"
 
-# checkpoint saved by the training script
-CKPT_PATH = "/home/default/results/CLIP1_Baseline/clip_linear_ln.pt"
+# Path to the checkpoint saved by your training script
+CKPT_PATH = "/home/default/results/DeepfakeDetection/CLIP5_ln_bias_slerp_linear_notext/clip5_linear_ln_bias_notext.pt"
 
-# test directories (frames)
+# Test set (change if needed)
 TEST_REAL_DIR = "/home/giadapoloni/C_test/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_test/C_fake"
 
-# where to save metrics
-RESULTS_DIR = "/home/default/results/CLIP1_Baseline/test_linear_ln"
-RESULTS_CSV_FRAME = os.path.join(RESULTS_DIR, "clip_test_metrics_global_linear_ln_frame.csv")
-RESULTS_CSV_VIDEO = os.path.join(RESULTS_DIR, "clip_test_metrics_global_linear_ln_video.csv")
+# Where to save CSV metrics
+RESULTS_DIR = "/home/giadapoloni/results_TEST/CLIP6_ln_bias_slerp_linear_notext"
+RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip6_test_metrics_global_linear_ln_bias_notext.csv")
+RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip6_test_metrics_video_linear_ln_bias_notext.csv")
 
 VIDEO_DECISION_THRESHOLD = 0.5
 BATCH_SIZE = 64
 NUM_WORKERS = 4
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+IS_CUDA = (DEVICE == "cuda")
 
 IMG_EXTS = {".jpg"}
 
+amp_dtype = torch.float16
 
-# MODEL
+
+def autocast_ctx():
+    if IS_CUDA:
+        return torch.autocast(device_type="cuda", dtype=amp_dtype, enabled=True)
+
+    class _NullCtx:
+        def __enter__(self): pass
+        def __exit__(self, exc_type, exc, tb): pass
+
+    return _NullCtx()
+
+
+# =========================
+# MODEL HEAD (same as training)
+# =========================
 
 class LinearHead(nn.Module):
     """
     Simple linear classifier on top of CLIP visual features.
-    Input: L2-normalized features from CLIP visual encoder.
+    Matches the head used in your training script
+    (keys: fc.weight, fc.bias).
     """
     def __init__(self, in_dim, n_classes=2):
         super().__init__()
@@ -56,27 +68,28 @@ class LinearHead(nn.Module):
         return self.fc(x)
 
 
-# DATASET / LOADER 
+# =========================
+# DATASET
+# =========================
 
 def collect_test_items(real_dir, fake_dir):
     """
-    Collect all frame paths from real and fake test directories.
+    Collect test frames from separate real/fake directories.
     """
     items = []
     for root, label in [(real_dir, 0), (fake_dir, 1)]:
         rroot = Path(root)
-        if not rroot.exists():
-            continue
-        for p in sorted(rroot.rglob("*")):
-            if p.is_file() and p.suffix.lower() in IMG_EXTS:
-                items.append({"path": p, "label": label})
+        if rroot.exists():
+            for p in sorted(rroot.rglob("*")):
+                if p.is_file() and p.suffix.lower() in IMG_EXTS:
+                    items.append({"path": p, "label": label})
     return items
 
 
 class TestFrameDataset(Dataset):
     """
-    Dataset for test frames.
-    Returns: (image_tensor, label, path_str)
+    Test dataset, returning image, label and path
+    to aggregate video-level metrics.
     """
     def __init__(self, items, preprocess):
         self.items = items
@@ -85,20 +98,20 @@ class TestFrameDataset(Dataset):
     def __len__(self):
         return len(self.items)
 
-    def __getitem__(self, idx):
-        rec = self.items[idx]
+    def __getitem__(self, i):
+        rec = self.items[i]
         img = Image.open(rec["path"]).convert("RGB")
         img = self.preprocess(img)
         return img, rec["label"], str(rec["path"])
 
 
-def build_test_loader(preprocess, real_dir, fake_dir):
-    items = collect_test_items(real_dir, fake_dir)
-    if len(items) == 0:
-        raise RuntimeError(f"No frames found in {real_dir} and {fake_dir}")
-    ds = TestFrameDataset(items, preprocess)
+def build_test_loader(preprocess):
+    test_items = collect_test_items(TEST_REAL_DIR, TEST_FAKE_DIR)
+    if len(test_items) == 0:
+        raise RuntimeError(f"No frames found in {TEST_REAL_DIR} and {TEST_FAKE_DIR}")
+    ds = TestFrameDataset(test_items, preprocess)
     persistent = (NUM_WORKERS > 0)
-    loader = DataLoader(
+    return DataLoader(
         ds,
         batch_size=BATCH_SIZE,
         shuffle=False,
@@ -107,66 +120,51 @@ def build_test_loader(preprocess, real_dir, fake_dir):
         persistent_workers=persistent,
         prefetch_factor=(2 if persistent else None),
     )
-    return loader
 
 
-# PREDICTION 
-
-@torch.no_grad()
-def extract_features(clip_model, imgs):
-    """
-    Encode images with CLIP visual encoder and apply L2 normalization.
-    """
-    z = clip_model.encode_image(imgs)
-    z = F.normalize(z, dim=-1)
-    return z
-
+# =========================
+# PREDICTION & EVALUATION
+# =========================
 
 @torch.no_grad()
 def predict_batch(clip_model, head, imgs):
     """
-    Forward pass for a batch: CLIP visual encoder -> L2 norm -> Linear head.
+    Forward pass for a batch of images: CLIP visual + linear head,
+    with L2-normalized features (same as in training).
     """
-    z = extract_features(clip_model, imgs)
+    z = clip_model.encode_image(imgs)
+    z = F.normalize(z, dim=-1)
     logits = head(z)
     return logits
 
 
-#  EVALUATION 
-
 @torch.no_grad()
-def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
+def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose=False):
     """
-    Evaluate on test set:
-      - frame-level metrics
-      - video-level metrics (avg prob_fake over up to 32 frames per video)
-    Video id is defined as the parent directory of each frame.
+    Evaluate on a frame-level and aggregate metrics also at video-level
+    by averaging up to 32 frames per video.
     """
     clip_model.eval()
     head.eval()
 
     softmax = nn.Softmax(dim=-1)
-
-    y_true = []
-    prob_fake = []
-
+    y_true, prob_fake = [], []
     per_video_probs = defaultdict(list)
     per_video_labels = {}
 
-    for imgs, labels, paths in tqdm(data_loader, desc="Testing (frames)"):
+    for imgs, labels, paths in tqdm(data_loader, desc="Eval", leave=False):
         imgs = imgs.to(device)
-        labels = torch.as_tensor(labels, device=device)
-
-        logits = predict_batch(clip_model, head, imgs)
-        probs = softmax(logits)
+        with autocast_ctx():
+            logits = predict_batch(clip_model, head, imgs)
+            probs = softmax(logits)
         batch_prob_fake = probs[:, 1].detach().cpu().numpy()
 
         # frame-level
-        y_true.extend(labels.cpu().numpy().tolist())
-        prob_fake.extend(batch_prob_fake.tolist())
+        y_true += list(labels)
+        prob_fake += batch_prob_fake.tolist()
 
-        # video-level: group by parent directory, keep at most 32 frames per video
-        for pth, lab, pr in zip(paths, labels.cpu().numpy(), batch_prob_fake):
+        # video-level aggregation
+        for pth, lab, pr in zip(paths, labels, batch_prob_fake):
             p = Path(pth)
             video_id = str(p.parent)
             if len(per_video_probs[video_id]) < 32:
@@ -174,7 +172,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
             if video_id not in per_video_labels:
                 per_video_labels[video_id] = int(lab)
 
-    # frame-level metrics 
+    # -------- Frame-level metrics --------
     y_true_arr = np.array(y_true, dtype=int)
     prob_fake_arr = np.array(prob_fake, dtype=float)
     y_pred_arr = (prob_fake_arr >= 0.5).astype(int)
@@ -189,11 +187,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
     recall = TP / (TP + FN + eps)
     f1 = 2 * precision * recall / (precision + recall + eps)
     accuracy = (TP + TN) / max(1, len(y_true_arr))
-    auc_roc = (
-        roc_auc_score(y_true_arr, prob_fake_arr)
-        if len(np.unique(y_true_arr)) > 1
-        else float("nan")
-    )
+    auc_roc = roc_auc_score(y_true_arr, prob_fake_arr) if len(np.unique(y_true_arr)) > 1 else float("nan")
 
     frame_metrics = {
         "accuracy": accuracy,
@@ -209,14 +203,12 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
         "threshold": 0.5,
     }
 
-    # video-level metrics 
+    # -------- Video-level metrics --------
     video_ids = sorted(per_video_probs.keys())
     if len(video_ids) == 0:
         video_metrics = None
     else:
-        y_true_vid = []
-        prob_fake_vid = []
-
+        y_true_vid, prob_fake_vid = [], []
         for vid in video_ids:
             probs_v = per_video_probs[vid]
             avg_prob = float(np.mean(probs_v)) if len(probs_v) > 0 else 0.0
@@ -236,11 +228,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
         recall_v = TPv / (TPv + FNv + eps)
         f1_v = 2 * precision_v * recall_v / (precision_v + recall_v + eps)
         accuracy_v = (TPv + TNv) / max(1, len(y_true_vid))
-        auc_roc_v = (
-            roc_auc_score(y_true_vid, prob_fake_vid)
-            if len(np.unique(y_true_vid)) > 1
-            else float("nan")
-        )
+        auc_roc_v = roc_auc_score(y_true_vid, prob_fake_vid) if len(np.unique(y_true_vid)) > 1 else float("nan")
 
         video_metrics = {
             "accuracy": accuracy_v,
@@ -257,43 +245,45 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
             "frames_per_video_avg": 32,
         }
 
-    # print
-    print("===== GLOBAL METRICS (frame-level) =====")
-    print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
-    print(f"Precision: {frame_metrics['precision']:.4f}")
-    print(f"Recall   : {frame_metrics['recall']:.4f}")
-    print(f"F1       : {frame_metrics['f1']:.4f}")
-    if not np.isnan(frame_metrics["auc_roc"]):
-        print(f"AUC-ROC  : {frame_metrics['auc_roc']:.4f}")
-    else:
-        print("AUC-ROC  : n/a")
-    print(
-        f"TP={frame_metrics['TP']}  TN={frame_metrics['TN']}  "
-        f"FP={frame_metrics['FP']}  FN={frame_metrics['FN']}  N={frame_metrics['N']}"
-    )
-
-    if video_metrics is not None:
-        print("===== GLOBAL METRICS (video-level, avg 32 frames) =====")
-        print(f"Videos   : {video_metrics['N_videos']}")
-        print(f"Accuracy : {video_metrics['accuracy']:.4f}")
-        print(f"Precision: {video_metrics['precision']:.4f}")
-        print(f"Recall   : {video_metrics['recall']:.4f}")
-        print(f"F1       : {video_metrics['f1']:.4f}")
-        if not np.isnan(video_metrics["auc_roc"]):
-            print(f"AUC-ROC  : {video_metrics['auc_roc']:.4f}")
+    if verbose:
+        print("===== GLOBAL METRICS (per-FRAME) =====")
+        print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
+        print(f"Precision: {frame_metrics['precision']:.4f}")
+        print(f"Recall   : {frame_metrics['recall']:.4f}")
+        print(f"F1       : {frame_metrics['f1']:.4f}")
+        if not np.isnan(frame_metrics["auc_roc"]):
+            print(f"AUC-ROC  : {frame_metrics['auc_roc']:.4f}")
         else:
             print("AUC-ROC  : n/a")
         print(
-            f"TP={video_metrics['TP']}  TN={video_metrics['TN']}  "
-            f"FP={video_metrics['FP']}  FN={video_metrics['FN']}"
+            f"TP={frame_metrics['TP']}  TN={frame_metrics['TN']}  "
+            f"FP={frame_metrics['FP']}  FN={frame_metrics['FN']}  N={frame_metrics['N']}"
         )
-    else:
-        print("No video groups found for video-level evaluation.")
+
+        if video_metrics is not None:
+            print("===== GLOBAL METRICS (per-VIDEO, avg 32 frame) =====")
+            print(f"Videos   : {video_metrics['N_videos']}")
+            print(f"Accuracy : {video_metrics['accuracy']:.4f}")
+            print(f"Precision: {video_metrics['precision']:.4f}")
+            print(f"Recall   : {video_metrics['recall']:.4f}")
+            print(f"F1       : {video_metrics['f1']:.4f}")
+            if not np.isnan(video_metrics["auc_roc"]):
+                print(f"AUC-ROC  : {video_metrics['auc_roc']:.4f}")
+            else:
+                print("AUC-ROC  : n/a")
+            print(
+                f"TP={video_metrics['TP']}  TN={video_metrics['TN']}  "
+                f"FP={video_metrics['FP']}  FN={video_metrics['FN']}"
+            )
+        else:
+            print("No video found")
 
     return frame_metrics, video_metrics
 
 
-# MAIN 
+# =========================
+# MAIN
+# =========================
 
 def main():
     print(f"Using device: {DEVICE}")
@@ -304,50 +294,45 @@ def main():
     print(f"Loaded checkpoint from: {CKPT_PATH}")
     print(f"Model name in checkpoint: {model_name}")
 
-    # Load CLIP model and preprocess
+    # Load CLIP backbone
     clip_model, preprocess = clip.load(model_name, device=DEVICE, jit=False)
     clip_model.float()
 
-    # Load visual encoder weights from checkpoint
+    # Load tuned visual encoder
     clip_model.visual.load_state_dict(ckpt["visual"])
 
-    # Freeze everything (we only do inference)
+    # Freeze all parameters (pure inference)
     for p in clip_model.parameters():
         p.requires_grad = False
 
-    # Build and load LinearHead
+    # Build linear head and load weights
     embed_dim = clip_model.visual.output_dim
     head = LinearHead(embed_dim, n_classes=2).to(DEVICE)
     head.load_state_dict(ckpt["head"])
 
-    clip_model.eval()
-    head.eval()
-
     # Build test loader
-    test_loader = build_test_loader(preprocess, TEST_REAL_DIR, TEST_FAKE_DIR)
+    test_loader = build_test_loader(preprocess)
 
-    # Run evaluation
+    # Evaluate
     frame_metrics, video_metrics = evaluate(
-        clip_model,
-        head,
-        test_loader,
-        DEVICE,
+        clip_model, head, test_loader, DEVICE,
         video_threshold=VIDEO_DECISION_THRESHOLD,
+        verbose=True,
     )
 
-    # Save
+    # Save CSVs
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    frame_df = pd.DataFrame([frame_metrics])
-    frame_df.to_csv(RESULTS_CSV_FRAME, index=False)
-    print(f"Saved frame-level metrics CSV to: {RESULTS_CSV_FRAME}")
+    metrics_df = pd.DataFrame([frame_metrics])
+    metrics_df.to_csv(RESULTS_CSV_METRICS, index=False)
+    print(f"Saved CSV global metrics (frame) in {RESULTS_CSV_METRICS}")
 
     if video_metrics is not None:
-        video_df = pd.DataFrame([video_metrics])
-        video_df.to_csv(RESULTS_CSV_VIDEO, index=False)
-        print(f"Saved video-level metrics CSV to: {RESULTS_CSV_VIDEO}")
+        metrics_vid_df = pd.DataFrame([video_metrics])
+        metrics_vid_df.to_csv(RESULTS_CSV_METRICS_VIDEO, index=False)
+        print(f"Saved CSV global metrics (video) in {RESULTS_CSV_METRICS_VIDEO}")
     else:
-        print("Video-level CSV not created (no videos found).")
+        print("CSV video not created (no videos found).")
 
 
 if __name__ == "__main__":

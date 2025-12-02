@@ -42,16 +42,31 @@ def collect_test_items(real_dir, fake_dir):
     Gather photos from real and fake directories.
     """
     items = []
-    rroot = Path(real_dir)
-    if rroot.exists():
-        for p in sorted(rroot.rglob("*")):
+
+    # REAL videos
+    real_videos = [d for d in Path(real_dir).iterdir() if d.is_dir()]
+    if len(real_videos) == 0:
+        raise ValueError("No real video directories found.")
+    real_videos = np.random.choice(real_videos, size=min(500, len(real_videos)), replace=False)
+
+    # FAKE videos
+    fake_videos = [d for d in Path(fake_dir).iterdir() if d.is_dir()]
+    if len(fake_videos) == 0:
+        raise ValueError("No fake video directories found.")
+    fake_videos = np.random.choice(fake_videos, size=min(500, len(fake_videos)), replace=False)
+
+    # Collect frames for REAL
+    for vid in real_videos:
+        for p in sorted(vid.rglob("*")):
             if p.is_file() and p.suffix.lower() in IMG_EXTS:
-                items.append({"path": p, "label": 0})
-    froot = Path(fake_dir)
-    if froot.exists():
-        for p in sorted(froot.rglob("*")):
+                items.append({"path": p, "label": 0, "video_id": "real_" + vid.name})
+
+    # Collect frames for FAKE
+    for vid in fake_videos:
+        for p in sorted(vid.rglob("*")):
             if p.is_file() and p.suffix.lower() in IMG_EXTS:
-                items.append({"path": p, "label": 1})
+                items.append({"path": p, "label": 1, "video_id": "fake_" + vid.name})
+
     return items
 
 class TestFrameDataset(Dataset):
@@ -64,14 +79,15 @@ class TestFrameDataset(Dataset):
         rec = self.items[i]
         img = Image.open(rec["path"]).convert("RGB")
         img = self.preprocess(img)
-        return img, rec["label"], str(rec["path"])
+        return img, rec["label"], rec["video_id"]
 
-def build_test_loader(preprocess, batch_size=64, num_workers=0):
+def build_test_loader(preprocess, batch_size=64, num_workers=4):
     """
-    Costruisce un DataLoader per il test set (Celeb-test).
+    Build a DataLoader for (Celeb-test).
     """
     items = collect_test_items(TEST_REAL_DIR, TEST_FAKE_DIR)
     assert len(items) > 0, "No image found"
+
     ds = TestFrameDataset(items, preprocess)
     return DataLoader(
         ds, batch_size=batch_size, shuffle=False,
@@ -83,7 +99,6 @@ def load_trained_models_for_visualization():
     """
     Loads CLIP model and linear head from checkpoint for visualization.
     """
-    # Load CLIP model and preprocess
     clip_model, clip_preprocess = clip.load(MODEL_NAME, device=DEVICE, jit=False)
 
     # Embedding size (512 per ViT-B/32)
@@ -112,30 +127,38 @@ def load_trained_models_for_visualization():
     return clip_model, head, clip_preprocess
 
 @torch.no_grad()
-def extract_embeddings_and_labels(clip_model, clip_preprocess, max_samples=None):
+def extract_embeddings_and_labels(clip_model, clip_preprocess):
     """
     Extracting embeddings from vision encoder CLIP (Celeb-test).
     """
     test_loader = build_test_loader(clip_preprocess)
 
-    all_z = []
-    all_y = []
+    video_embeds = {}
+    video_labels = {}
 
     pbar = tqdm(test_loader, desc="Embedding extraction")
-    for imgs, labels, paths in pbar:
+    for imgs, labels, video_ids in pbar:
         imgs = imgs.to(DEVICE, non_blocking=True)
-        # embedding dal vision encoder CLIP
-        z = F.normalize(clip_model.encode_image(imgs), dim=-1)  # [B, 512]
-        all_z.append(z.cpu())
-        all_y.append(labels.clone().cpu())
+        z = F.normalize(clip_model.encode_image(imgs), dim=-1).cpu().numpy()
+        labels_np = labels.cpu().numpy()
 
-    Z = torch.cat(all_z, dim=0).numpy()
-    Y = torch.cat(all_y, dim=0).numpy()
+        for emb, lab, vid in zip(z, labels_np, video_ids):
+            if vid not in video_embeds:
+                video_embeds[vid] = []
+                video_labels[vid] = int(lab)
+            video_embeds[vid].append(emb)
 
-    if max_samples is not None and Z.shape[0] > max_samples:
-        idx = np.random.choice(Z.shape[0], size=max_samples, replace=False)
-        Z = Z[idx]
-        Y = Y[idx]
+    video_ids_list = list(video_embeds.keys())
+    Z_list = []
+    Y_list = []
+
+    for vid in video_ids_list:
+        emb_stack = np.stack(video_embeds[vid], axis=0)
+        Z_list.append(emb_stack.mean(axis=0))  
+        Y_list.append(video_labels[vid])
+
+    Z = np.stack(Z_list, axis=0)
+    Y = np.array(Y_list)
 
     print(f"✓ Extracted Embeddings: {Z.shape[0]} samples, dim = {Z.shape[1]}")
     return Z, Y
@@ -146,8 +169,6 @@ def project_to_3d_with_pca(Z):
     """
     pca = PCA(n_components=3)
     Z3 = pca.fit_transform(Z)
-    print("Variance explained by PCA 3 main components:",
-          pca.explained_variance_ratio_.sum())
     return Z3, pca
 
 def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA on Celeb-test)"):
@@ -167,12 +188,11 @@ def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA on Celeb-
         Z3[mask_real, 0],
         Z3[mask_real, 1],
         Z3[mask_real, 2],
-        s=30,
-        alpha=0.8,
+        s=40,
+        alpha=1.0,    
         c="blue",
         marker="o",
-        edgecolors="k",
-        linewidths=0.2,
+        edgecolors="none",
         label="REAL (0)"
     )
 
@@ -181,12 +201,11 @@ def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA on Celeb-
         Z3[mask_fake, 0],
         Z3[mask_fake, 1],
         Z3[mask_fake, 2],
-        s=30,
-        alpha=0.8,
+        s=40,
+        alpha=1.0,    
         c="red",
         marker="o",
-        edgecolors="k",
-        linewidths=0.2,
+        edgecolors="none",
         label="FAKE (1)"
     )
 
@@ -195,15 +214,15 @@ def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA on Celeb-
     ax.set_zlabel("PC 3")
     ax.set_title(title)
     ax.legend(loc="best")
-    ax.view_init(elev=20, azim=45)
+    ax.view_init(elev=20, azim=75)
 
     plt.tight_layout()
 
     save_dir = "/home/desireebengalli"
     os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, "clip_embeddings_3d.jpg")
+    save_path = os.path.join(save_dir, "clip_embeddings_3d_2.jpg")
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
-    print(f"✓ Graph saved in: {save_path}")
+    print(f"Graph saved in: {save_path}")
 
     plt.show()
 
@@ -213,8 +232,7 @@ clip_model_vis, head_vis, clip_preprocess_vis = load_trained_models_for_visualiz
 # Extract embeddings and label from test
 Z, Y = extract_embeddings_and_labels(
     clip_model_vis,
-    clip_preprocess_vis,
-    max_samples=3000  # 3000 points for readability
+    clip_preprocess_vis
 )
 
 Z3, pca = project_to_3d_with_pca(Z)

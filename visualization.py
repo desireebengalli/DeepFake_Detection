@@ -26,10 +26,10 @@ RESULTS_DIR = "/home/giadapoloni/visualizations"
 VIS_DIR = os.path.join(RESULTS_DIR, "attention maps")
 os.makedirs(VIS_DIR, exist_ok=True)
 
-path_real = "/home/giadapoloni/C_test/C_real/id1_0001/C_real_id1_0001_001_ctx.jpg"
-path_fake = "/home/giadapoloni/C_test/C_fake/id1_id2_0001/C_fake_id1_id2_0001_001_ctx.jpg"
-path_fake2 = "/home/giadapoloni/C_test/C_fake/id1_id3_0001/C_fake_id1_id3_0001_001_ctx.jpg"
-path_fake3 = "/home/giadapoloni/C_test/C_fake/id1_id6_0001/C_fake_id1_id6_0001_001_ctx.jpg"
+path_real = "/home/giadapoloni/C_test/C_real/id1_0000/C_real_id1_0000_001_ctx.jpg"
+path_fake = "/home/giadapoloni/C_test/C_fake/id1_id4_0000/C_fake_id1_id4_0000_001_ctx.jpg"
+path_fake2 = "/home/giadapoloni/C_test/C_fake/id1_id9_0000/C_fake_id1_id9_0000_001_ctx.jpg"
+path_fake3 = "/home/giadapoloni/C_test/C_fake/id1_id16_0000/C_fake_id1_id16_0000_001_ctx.jpg"
 
 IMG_EXTS = {".jpg"}
 

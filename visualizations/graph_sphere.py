@@ -1,7 +1,5 @@
-# ===========================================
-# VISUALIZZAZIONE 3D DEGLI EMBEDDING CLIP (REAL vs FAKE)
-# Usando checkpoint già salvato
-# ===========================================
+# 3D Visualisation of the CLIP embeddings (REAL vs FAKE)
+# Using chekpoints from the CLIP5_ln_bias_linear_notext experiment and Celeb-test dataset.
 
 import os
 import numpy as np
@@ -14,31 +12,23 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
 import clip
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # per la proiezione '3d'
+from mpl_toolkits.mplot3d import Axes3D  
 from sklearn.decomposition import PCA
 
-# -------------------------------
-# CONFIG MINIMA (ADATTA SOLO SE NECESSARIO)
-# -------------------------------
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_NAME = "ViT-B/16"
 
-# Path al checkpoint salvato durante il training
-SAVE_PATH = "/home/giadapoloni/results2/CLIP5_linear_ln_bias_notext/clip5_linear_ln_bias_notext.pt"
+# Checkpoint of the model
+SAVE_PATH = "/home/giadapoloni/results2/CLIP5_ln_bias_linear_notext/clip5_linear_ln_bias_notext.pt"
 
-# Cartelle Celeb-test (come nel tuo script originale)
+# Celeb folders 
 TEST_REAL_DIR = "/home/giadapoloni/C_test/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_test/C_fake"
 
-# Estensioni immagini
 IMG_EXTS = {".jpg"}
-
-# -------------------------------
-# CLASSI E FUNZIONI DI SUPPORTO
-# -------------------------------
 
 class LinearHead(nn.Module):
     def __init__(self, in_dim, n_classes=2):
@@ -49,8 +39,7 @@ class LinearHead(nn.Module):
 
 def collect_test_items(real_dir, fake_dir):
     """
-    Raccoglie tutte le immagini real (label=0) e fake (label=1)
-    dalle cartelle Celeb-test.
+    Gather photos from real and fake directories.
     """
     items = []
     rroot = Path(real_dir)
@@ -82,7 +71,7 @@ def build_test_loader(preprocess, batch_size=64, num_workers=0):
     Costruisce un DataLoader per il test set (Celeb-test).
     """
     items = collect_test_items(TEST_REAL_DIR, TEST_FAKE_DIR)
-    assert len(items) > 0, "Nessuna immagine trovata nelle cartelle di test."
+    assert len(items) > 0, "No image found"
     ds = TestFrameDataset(items, preprocess)
     return DataLoader(
         ds, batch_size=batch_size, shuffle=False,
@@ -92,23 +81,22 @@ def build_test_loader(preprocess, batch_size=64, num_workers=0):
 @torch.no_grad()
 def load_trained_models_for_visualization():
     """
-    Carica CLIP + head dal checkpoint salvato.
-    Ritorna: clip_model, head, clip_preprocess
+    Loads CLIP model and linear head from checkpoint for visualization.
     """
-    # Carica modello CLIP e preprocess
+    # Load CLIP model and preprocess
     clip_model, clip_preprocess = clip.load(MODEL_NAME, device=DEVICE, jit=False)
 
-    # Dimensione embedding (512 per ViT-B/32)
+    # Embedding size (512 per ViT-B/32)
     embed_dim = clip_model.text_projection.shape[1]
 
-    # Inizializza la head
+    # Initialize the head
     head = LinearHead(embed_dim, n_classes=2).to(DEVICE)
 
-    # Carica stato dal checkpoint
-    assert os.path.isfile(SAVE_PATH), f"Checkpoint non trovato: {SAVE_PATH}"
+    # Load the checkpoint
+    assert os.path.isfile(SAVE_PATH), f"Checkpoint not found: {SAVE_PATH}"
     ckpt = torch.load(SAVE_PATH, map_location=DEVICE)
 
-    # Carica solo la parte visual di CLIP e la head
+    # Load only visual and head weights
     _ = clip_model.visual.load_state_dict(ckpt["visual"], strict=False)
     head.load_state_dict(ckpt["head"])
 
@@ -120,24 +108,20 @@ def load_trained_models_for_visualization():
     for p in head.parameters():
         p.requires_grad = False
 
-    print("✓ Modello CLIP e head caricati dal checkpoint.")
+    print("✓ CLIP model and head loaded from checkpoint for visualization.")
     return clip_model, head, clip_preprocess
 
 @torch.no_grad()
 def extract_embeddings_and_labels(clip_model, clip_preprocess, max_samples=None):
     """
-    Estrae gli embedding dal vision encoder CLIP per il set di test (Celeb-test).
-    Ritorna:
-        Z : np.array [N, D] embedding normalizzati
-        Y : np.array [N]    labels (0=real, 1=fake)
-    max_samples: se non None, sottocampiona casualmente a max_samples punti.
+    Extracting embeddings from vision encoder CLIP (Celeb-test).
     """
     test_loader = build_test_loader(clip_preprocess)
 
     all_z = []
     all_y = []
 
-    pbar = tqdm(test_loader, desc="Estrazione embedding (test set)")
+    pbar = tqdm(test_loader, desc="Embedding extraction")
     for imgs, labels, paths in pbar:
         imgs = imgs.to(DEVICE, non_blocking=True)
         # embedding dal vision encoder CLIP
@@ -153,26 +137,24 @@ def extract_embeddings_and_labels(clip_model, clip_preprocess, max_samples=None)
         Z = Z[idx]
         Y = Y[idx]
 
-    print(f"✓ Embedding estratti: {Z.shape[0]} campioni, dim = {Z.shape[1]}")
+    print(f"✓ Extracted Embeddings: {Z.shape[0]} samples, dim = {Z.shape[1]}")
     return Z, Y
 
 def project_to_3d_with_pca(Z):
     """
-    Proietta gli embedding Z (N, D) in 3D usando PCA.
-    Restituisce Z3 (N, 3) e l'oggetto pca.
+    Projecting 3D embeddings with PCA
     """
     pca = PCA(n_components=3)
     Z3 = pca.fit_transform(Z)
-    print("Varianza spiegata dalle 3 componenti PCA:",
+    print("Variance explained by PCA 3 main components:",
           pca.explained_variance_ratio_.sum())
     return Z3, pca
 
-def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA su Celeb-test)"):
+def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA on Celeb-test)"):
     """
-    Crea un grafico 3D:
-      - REAL (label=0) = blu
-      - FAKE (label=1) = rosso
-    Usa marker 'o' (sfere) per i punti.
+    Creatin the graph 3D:
+      - REAL (label=0) = blue
+      - FAKE (label=1) = red
     """
     fig = plt.figure(figsize=(9, 7))
     ax = fig.add_subplot(111, projection='3d')
@@ -180,7 +162,7 @@ def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA su Celeb-
     mask_real = (Y == 0)
     mask_fake = (Y == 1)
 
-    # REAL = blu
+    # REAL = blue
     ax.scatter(
         Z3[mask_real, 0],
         Z3[mask_real, 1],
@@ -194,7 +176,7 @@ def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA su Celeb-
         label="REAL (0)"
     )
 
-    # FAKE = rosso
+    # FAKE = red
     ax.scatter(
         Z3[mask_fake, 0],
         Z3[mask_fake, 1],
@@ -216,25 +198,25 @@ def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA su Celeb-
     ax.view_init(elev=20, azim=45)
 
     plt.tight_layout()
+
+    save_dir = "/home/desireebengalli"
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "clip_embeddings_3d.jpg")
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    print(f"✓ Graph saved in: {save_path}")
+
     plt.show()
 
-# -------------------------------
-# ESECUZIONE COMPLETA
-# -------------------------------
-
-# 1. Carica modelli dal checkpoint
+# Check models from checkpoint
 clip_model_vis, head_vis, clip_preprocess_vis = load_trained_models_for_visualization()
 
-# 2. Estrai embedding e labels dal set di test
-#    Puoi cambiare max_samples=None per usare TUTTI i campioni
+# Extract embeddings and label from test
 Z, Y = extract_embeddings_and_labels(
     clip_model_vis,
     clip_preprocess_vis,
-    max_samples=3000  # ad es. 3000 punti per un grafico leggibile
+    max_samples=3000  # 3000 points for readability
 )
 
-# 3. Proietta in 3D con PCA
 Z3, pca = project_to_3d_with_pca(Z)
 
-# 4. Plot 3D (REAL=blu, FAKE=rosso)
 plot_3d_embeddings(Z3, Y)

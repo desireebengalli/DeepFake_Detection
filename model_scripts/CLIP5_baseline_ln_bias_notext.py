@@ -11,7 +11,7 @@ from sklearn.metrics import roc_auc_score
 
 # CONFIG
 MODEL_NAME = "ViT-B/16"
-EPOCHS = 2
+EPOCHS = 10
 BATCH_SIZE = 16
 ACCUM_STEPS = 8             # overall 128 batch size
 NUM_WORKERS = 4
@@ -29,7 +29,7 @@ VIDEO_DECISION_THRESHOLD = 0.5
 SEED = 1
 
 # Early stopping (if applied)
-PATIENCE = 6
+PATIENCE = 11
 MIN_DELTA = 0.0            
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -39,10 +39,13 @@ IS_CUDA = (DEVICE == "cuda")
 DATA_DIR = "/home/giadapoloni/preprocessed_frames"
 TEST_REAL_DIR = "/home/giadapoloni/C_validation/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_validation/C_fake"
-RESULTS_DIR = "/home/giadapoloni/results2/CLIP5_ln_bias_linear_notext"
-RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip5_test_metrics_global_linear_ln_bias_notext.csv")
-RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip5_test_metrics_video_linear_ln_bias_notext.csv")
-SAVE_PATH = os.path.join(RESULTS_DIR, "clip5_linear_ln_bias_notext.pt")
+RESULTS_DIR = "/home/giadapoloni/results2/CLIP5_values_per_epoch"
+RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip5_test_metrics_frame.csv")
+RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip5_test_metrics_video.csv")
+
+SAVE_PATH = os.path.join(RESULTS_DIR, "clip5.pt")
+
+RESULTS_CSV_AUC_PER_EPOCH = os.path.join(RESULTS_DIR, "clip_auc_per_epoch.csv")
 
 amp_dtype = torch.float16
 scaler = torch.amp.GradScaler(device='cuda', enabled=IS_CUDA)
@@ -448,6 +451,8 @@ def train_and_eval():
     epochs_no_improve = 0
     global_step = 0
 
+    epoch_auc_history = []
+
     for epoch in range(1, EPOCHS + 1):
         running = 0.0
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{EPOCHS}")
@@ -495,6 +500,19 @@ def train_and_eval():
             verbose=False
         )
 
+        # saving per epoch
+        frame_auc = frame_m["auc_roc"] if frame_m is not None else float("nan")
+        video_auc = (
+            video_m["auc_roc"]
+            if (video_m is not None and not np.isnan(video_m["auc_roc"]))
+            else float("nan")
+        )
+        epoch_auc_history.append({
+            "epoch": epoch,
+            "frame_auc_roc": frame_auc,
+            "video_auc_roc": video_auc,
+        })
+
         if video_m is None or np.isnan(video_m["auc_roc"]):
             print("No video found")
             current_auc_v = float("nan")
@@ -528,6 +546,13 @@ def train_and_eval():
         # keep on training
         clip_model.visual.train()
         head.train()
+
+    
+    if len(epoch_auc_history) > 0:
+        os.makedirs(os.path.dirname(RESULTS_CSV_AUC_PER_EPOCH), exist_ok=True)
+        df_auc = pd.DataFrame(epoch_auc_history)
+        df_auc.to_csv(RESULTS_CSV_AUC_PER_EPOCH, index=False)
+        print(f"✓ Salvato CSV AUC per-epoch in {RESULTS_CSV_AUC_PER_EPOCH}")
 
     print(f"\nTraining ended. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
 

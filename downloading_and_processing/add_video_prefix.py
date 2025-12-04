@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 
-# Root principale dei frame preprocessati
 BASE = Path("/home/giadapoloni/C_preprocessed_frames/C_fake")
 
 IMG_EXTS = [".jpg",]
@@ -19,7 +18,6 @@ def add_prefix_in_dir(video_dir: Path):
             print(f"Renamed: {f.name} -> {new_name}")
 
 def main():
-    # scorri tutte le sottocartelle di preprocessed_frames
     for root, dirs, files in os.walk(BASE):
         for d in dirs:
             video_dir = Path(root) / d

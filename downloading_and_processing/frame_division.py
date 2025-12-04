@@ -224,10 +224,6 @@ def process_dir(dir_path: str, label: str):
     summary = " ".join(f"{k}={v}" for k, v in sorted(stats.items()))
     print(f"[SUMMARY {label}] total={total} {summary}")
 
-# =========================
-# Main
-# =========================
-
 def main():
     ensure_dir(OUT)
     for dir_path, label in TARGET_DIRS:
@@ -235,10 +231,9 @@ def main():
 
     ext = IMG_EXT.lstrip(".")
     print("Done. Struttura output:")
-    # print(f"- {OUT}/C_real/<video_id>/001..{ext}")
     print(f"- {OUT}/C_fake/fake/<video_id>/001..{ext}")
     if DRY_RUN:
-        print("Note: DRY_RUN=True → nessun video è stato cancellato o spostato nel cestino.")
+        print("Note: DRY_RUN=True → no video deleted of moved to the bin.")
 
 if __name__ == "__main__":
     main()

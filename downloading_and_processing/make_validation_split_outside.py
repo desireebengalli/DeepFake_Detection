@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Sposta il 15% (o una percentuale specificata) delle cartelle-video da
-/home/giadapoloni/C_preprocessed/{C_real, C_fake}
-in una nuova cartella /home/giadapoloni/C_validation,
-mantenendo la struttura interna (C_real / C_fake).
-
-Uso tipico:
-    python make_validation_split_outside.py \
-        --root /home/giadapoloni/C_preprocessed \
-        --percent 0.15 \
-        --mode move \
-        --seed 42
-"""
-
 from pathlib import Path
 import argparse
 import random
@@ -22,9 +6,9 @@ import math
 import sys
 
 def pick_dirs_for_split(src_dir: Path, percent: float, rng: random.Random):
-    """Restituisce la lista di cartelle (solo directory) selezionate per lo split."""
+    """Returns the list of folders selected for the split"""
     if not src_dir.exists():
-        raise FileNotFoundError(f"Sorgente non trovata: {src_dir}")
+        raise FileNotFoundError(f"Source not found: {src_dir}")
     video_dirs = [d for d in src_dir.iterdir() if d.is_dir()]
     total = len(video_dirs)
     if total == 0:
@@ -39,20 +23,20 @@ def ensure_dir(p: Path):
 def move_or_copy_dir(src: Path, dst_root: Path, mode: str):
     dst = dst_root / src.name
     if dst.exists():
-        raise FileExistsError(f"La destinazione esiste già: {dst}")
+        raise FileExistsError(f"Destination already extists: {dst}")
     if mode == "move":
         shutil.move(str(src), str(dst))
     elif mode == "copy":
         shutil.copytree(src, dst)
     else:
-        raise ValueError("--mode deve essere 'move' o 'copy'")
+        raise ValueError("--mode can't be 'move' or 'copy'")
 
 def main():
-    parser = argparse.ArgumentParser(description="Crea /home/giadapoloni/C_validation spostando/coppiando una percentuale di video.")
-    parser.add_argument("--root", type=Path, default=Path("/home/giadapoloni/C_preprocessed_frames"), help="Directory che contiene C_real e C_fake.")
-    parser.add_argument("--percent", type=float, default=0.15, help="Percentuale (0..1) di cartelle da mettere in validation.")
-    parser.add_argument("--mode", choices=["move", "copy"], default="move", help="Spostare (move) o copiare (copy) le cartelle.")
-    parser.add_argument("--seed", type=int, default=None, help="Seed per random, per riproducibilità.")
+    parser = argparse.ArgumentParser(description="Crea /home/giadapoloni/C_validation moving/copying a percentage of videos.")
+    parser.add_argument("--root", type=Path, default=Path("/home/giadapoloni/C_preprocessed_frames"), help="Directory that contains C_real and C_fake.")
+    parser.add_argument("--percent", type=float, default=0.15, help="Percentage (0..1) of folders to put in validation.")
+    parser.add_argument("--mode", choices=["move", "copy"], default="move", help="Move or copy the folders.")
+    parser.add_argument("--seed", type=int, default=None, help="Seed for random, for reproducibiulity.")
     args = parser.parse_args()
 
     root = args.root
@@ -64,7 +48,7 @@ def main():
 
     for p in [c_real, c_fake]:
         if not p.exists():
-            print(f"ERRORE: non trovo {p}", file=sys.stderr)
+            print(f"ERROR: not found {p}", file=sys.stderr)
             sys.exit(1)
 
     ensure_dir(c_val_real)
@@ -76,11 +60,11 @@ def main():
     chosen_fake = pick_dirs_for_split(c_fake, args.percent, rng)
 
     print(f"Root: {root}")
-    print(f"Destinazione validation: {c_val}")
-    print(f"Percentuale: {args.percent:.2%}")
-    print(f"Modalità: {args.mode}")
-    print(f"Selezionati REAL: {len(chosen_real)}")
-    print(f"Selezionati FAKE: {len(chosen_fake)}")
+    print(f"Destination validation: {c_val}")
+    print(f"Percentage: {args.percent:.2%}")
+    print(f"Mode: {args.mode}")
+    print(f"Selected REAL: {len(chosen_real)}")
+    print(f"Selected FAKE: {len(chosen_fake)}")
     print("-" * 60)
 
     errors = []
@@ -102,12 +86,12 @@ def main():
 
     print("-" * 60)
     if errors:
-        print(f"Completato con errori: {len(errors)} problemi riscontrati.", file=sys.stderr)
+        print(f"Completed with errors: {len(errors)} problems encountered.", file=sys.stderr)
         for d, e in errors:
             print(f" - {d}: {e}", file=sys.stderr)
         sys.exit(2)
     else:
-        print("Completato senza errori.")
+        print("Completed wiuthout errors.")
 
 if __name__ == "__main__":
     main()

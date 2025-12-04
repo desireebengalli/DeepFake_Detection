@@ -9,7 +9,6 @@ import clip
 from collections import Counter, defaultdict
 from sklearn.metrics import roc_auc_score
 
-# CONFIG 
 
 MODEL_NAME = "ViT-B/16"
 EPOCHS = 2
@@ -57,10 +56,6 @@ def autocast_ctx():
         def __enter__(self): pass
         def __exit__(self, exc_type, exc, tb): pass
     return _NullCtx()
-
-
-
-
 
 # Utility & dataset
 
@@ -251,7 +246,6 @@ def predict_batch(clip_model, head, text_bank, imgs, alpha_sup=0.7):
 
 
 # EVALUATION (frame + video) 
-
 @torch.no_grad()
 def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0.5, verbose=False):
     clip_model.eval()
@@ -282,7 +276,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
             if video_id not in per_video_labels:
                 per_video_labels[video_id] = int(lab)
 
-    # ---- frame-level metrics ----
+    # frame-level metrics 
     y_true_arr = np.array(y_true, dtype=int)
     prob_fake_arr = np.array(prob_fake, dtype=float)
     y_pred_arr = (prob_fake_arr >= 0.5).astype(int)
@@ -313,7 +307,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
         "threshold": 0.5,
     }
 
-    # ---- video-level metrics ----
+    # video-level metrics
     video_ids = sorted(per_video_probs.keys())
     if len(video_ids) == 0:
         video_metrics = None
@@ -356,7 +350,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
         }
 
     if verbose:
-        print("===== GLOBAL METRICS (per-FRAME) =====")
+        print("VIDEO METRICS")
         print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
         print(f"Precision: {frame_metrics['precision']:.4f}")
         print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -368,7 +362,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
         print(f"TP={frame_metrics['TP']}  TN={frame_metrics['TN']}  FP={frame_metrics['FP']}  FN={frame_metrics['FN']}  N={frame_metrics['N']}")
 
         if video_metrics is not None:
-            print("===== GLOBAL METRICS (per-VIDEO, avg 32 frame) =====")
+            print("GLOBAL METRICS (per-VIDEO, avg 32 frame)")
             print(f"Videos   : {video_metrics['N_videos']}")
             print(f"Accuracy : {video_metrics['accuracy']:.4f}")
             print(f"Precision: {video_metrics['precision']:.4f}")

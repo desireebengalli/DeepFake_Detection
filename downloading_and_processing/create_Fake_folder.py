@@ -1,7 +1,6 @@
 import os
 import shutil
 
-# Percorsi sorgente
 src_dirs = [
     "/home/default/DeepFake_Detection/preprocessed_512jpg/Deepfakes",
     "/home/default/DeepFake_Detection/preprocessed_512jpg/Face2Face",
@@ -13,13 +12,10 @@ src_dirs = [
     "/home/giadapoloni/DeepFake_Detection/preprocessed_augmentation_512jpg/NeuralTextures"
 ]
 
-# Cartella di destinazione
 dst_dir = "/home/desireebengalli/DeepFake_Detection/Fake"
 
-# Crea la cartella di destinazione se non esiste
 os.makedirs(dst_dir, exist_ok=True)
 
-# Estensioni di immagini accettate
 valid_exts = (".jpg")
 
 count = 0

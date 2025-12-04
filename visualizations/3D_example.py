@@ -185,7 +185,7 @@ def visualize_one_real_one_fake_video_3d(
     ax.set_xlabel("PC1")
     ax.set_ylabel("PC2")
     ax.set_zlabel("PC3")
-    ax.set_title("3D PCA dei frame: REAL vs FAKE (senza 'aug')")
+    ax.set_title("3D PCA dei frame: REAL vs FAKE")
 
     ax.legend(loc="best")
     plt.tight_layout()

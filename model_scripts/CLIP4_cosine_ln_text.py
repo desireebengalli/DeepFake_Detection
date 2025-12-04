@@ -18,8 +18,8 @@ ACCUM_STEPS = 8     # overall 128
 NUM_WORKERS = 4
 
 # Learning Rate
-BASE_LR = 3e-4             # max LR we obtain
-MIN_LR = 1e-5              # min LR at the end of training
+BASE_LR = 3e-4 
+MIN_LR = 1e-5  
 WARMUP_RATIO = 0.05
 
 # ADAMW - weight_dacay = 0 
@@ -59,9 +59,6 @@ def autocast_ctx():
     return _NullCtx()
 
 
-
-
-
 # Utility & dataset
 
 IMG_EXTS = {".jpg"}  
@@ -75,21 +72,18 @@ def set_seed(seed):
 
 class CosineHead(nn.Module):
     """
-    Cosine classifier: normalizza i pesi e usa uno scale learnable.
-    Input atteso: z già normalizzato (F.normalize).
+    Cosine classifier
     """
     def __init__(self, in_dim, n_classes=2, init_scale=16.0):
         super().__init__()
-        self.W = nn.Parameter(torch.randn(in_dim, n_classes))  # [D, C]
+        self.W = nn.Parameter(torch.randn(in_dim, n_classes)) 
         nn.init.normal_(self.W, std=0.02)
         self.scale = nn.Parameter(torch.tensor(float(init_scale)), requires_grad=True)
 
-    def forward(self, z):  # z: [B, D] (già normalizzato)
-        Wn = F.normalize(self.W, dim=0)         # [D, C]
-        logits = self.scale * (z @ Wn)          # [B, C]
+    def forward(self, z): 
+        Wn = F.normalize(self.W, dim=0)   
+        logits = self.scale * (z @ Wn)    
         return logits
-
-
 
 def enable_ln_tuning_on_visual(visual_module):
     """
@@ -289,7 +283,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
             if video_id not in per_video_labels:
                 per_video_labels[video_id] = int(lab)
 
-    # ---- frame-level metrics ----
+    # frame-level metrics
     y_true_arr = np.array(y_true, dtype=int)
     prob_fake_arr = np.array(prob_fake, dtype=float)
     y_pred_arr = (prob_fake_arr >= 0.5).astype(int)
@@ -320,7 +314,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
         "threshold": 0.5,
     }
 
-    # ---- video-level metrics ----
+    # video-level metrics 
     video_ids = sorted(per_video_probs.keys())
     if len(video_ids) == 0:
         video_metrics = None
@@ -393,25 +387,17 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
             print("ERROR - NO VIDEO FOUND")
 
     return frame_metrics, video_metrics
-
-
-
-
-
-
-# ---------- Training 
+ 
 
 def train_and_eval():
     set_seed(SEED)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    # CLIP LOAD
     clip_model, preprocess = clip.load(MODEL_NAME, device=DEVICE, jit=False)
 
     clip_model.float()
 
-    # LN-tuning 
     tuned_params = enable_ln_tuning_on_visual(clip_model.visual)
 
 
@@ -424,7 +410,6 @@ def train_and_eval():
     text_bank = build_text_bank(clip_model, DEVICE)
     head = CosineHead(embed_dim, n_classes=2, init_scale=16.0).to(DEVICE)
     
-
     # Dataloader
     train_loader = build_train_loader(preprocess)
     test_loader = build_test_loader(preprocess)
@@ -442,7 +427,7 @@ def train_and_eval():
         class_weights = None
     ce = nn.CrossEntropyLoss(weight=class_weights)
 
-    # LR Scheduler (warmup + cosine decay)
+    # LR Scheduler
     steps_per_epoch = (len(train_loader) + ACCUM_STEPS - 1) // ACCUM_STEPS
     total_steps = EPOCHS * steps_per_epoch
     optimizer, scheduler = build_optimizer_and_scheduler(head, tuned_params, total_steps)
@@ -500,7 +485,6 @@ def train_and_eval():
             running += loss.item()
             pbar.set_postfix(loss=running / max(1, step))
 
-        # ---------- VALIDATION + EARLY STOPPING (if applied) ----------
         print(f"\nEvaluation on test after epoch {epoch}...")
         frame_m, video_m = evaluate(
             clip_model, head, test_loader, DEVICE, text_bank,
@@ -539,13 +523,12 @@ def train_and_eval():
                 print("Early stopping - Stop training.")
                 break
 
-        # se continuiamo, rimettiamo in train per epoch successiva
         clip_model.visual.train()
         head.train()
 
     print(f"\nTraining ended. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
 
-    # ----- TEST FINALE sul best checkpoint -----
+    # TEST FINALE sul best checkpoint
     print("Reloading the best checkpoint and evaluate final metrics...")
     ckpt = torch.load(SAVE_PATH, map_location=DEVICE)
     head.load_state_dict(ckpt["head"])

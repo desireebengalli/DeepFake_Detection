@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# data_augmentation.py — Offline *_ctx augmentation (CPU, torchvision/PIL)
-# Drop-in replacement: same CLI & output naming as your GPU/Kornia version.
-
 import os, argparse, random, io
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,9 +8,6 @@ from PIL import Image, ImageFilter, ImageOps
 import numpy as np
 from torchvision import transforms
 
-# -------------------------
-# Helpers
-# -------------------------
 def is_ctx_img(p: Path) -> bool:
     n = p.name.lower()
     return (n.endswith("_ctx.jpg") or n.endswith("_ctx.jpeg")) and ("_aug" not in n)
@@ -54,9 +47,7 @@ def build_dst_outroot(out_root: Path, rel_parent: Path, base_name: str, aug_idx:
     dst_dir.mkdir(parents=True, exist_ok=True)
     return dst_dir / f"{base_name}_aug{aug_idx:02d}_ctx.jpg"
 
-# -------------------------
-# Augmentation blocks (PIL/torchvision)
-# -------------------------
+# Augmentation blocks 
 class RandomJPEGArtifacts:
     """Re-encode to JPEG at random quality to simulate compression artifacts."""
     def __init__(self, p: float = 0.5, qmin: int = 65, qmax: int = 92):
@@ -84,8 +75,6 @@ class RandomGaussianNoise:
         return Image.fromarray(out, mode="RGB")
 
 def make_aug_pipeline():
-    # NOTA: non ridimensioniamo (resta 512x512 come input),
-    # riproduciamo flip / affine / jitter / blur / noise / jpeg artifacts.
     pil_affine = transforms.RandomAffine(
         degrees=15, translate=(0.10, 0.10), scale=(0.9, 1.1), interpolation=transforms.InterpolationMode.BILINEAR
     )
@@ -96,15 +85,10 @@ def make_aug_pipeline():
         transforms.RandomApply([transforms.Lambda(lambda im: im.filter(ImageFilter.GaussianBlur(radius=1)))], p=0.3),
         RandomGaussianNoise(p=0.4, std=0.03),
         RandomJPEGArtifacts(p=0.5, qmin=65, qmax=92),
-        # restiamo in PIL per salvare direttamente
     ])
 
-# -------------------------
-# Worker
-# -------------------------
 def augment_and_save(src_path: Path, out_root: Path, variants: int, jpg_quality: int,
                      input_roots: List[Path], strip_prefix: str, aug):
-    # Determina il root di riferimento per path relativi (usa il primo root)
     first_root = input_roots[0]
     try:
         img = Image.open(src_path).convert("RGB")
@@ -122,9 +106,6 @@ def augment_and_save(src_path: Path, out_root: Path, variants: int, jpg_quality:
         written += 1
     return written
 
-# -------------------------
-# CLI
-# -------------------------
 def parse_args():
     ap = argparse.ArgumentParser(description="Augment ONLY *_ctx.jpg (CPU).")
     ap.add_argument("--in-roots", nargs="+", required=True,
@@ -139,10 +120,6 @@ def parse_args():
     ap.add_argument("--progress", action="store_true")
     ap.add_argument("--skip-existing", action="store_true")
     return ap.parse_args()
-
-# -------------------------
-# Main
-# -------------------------
 
 def main():
     args = parse_args()
@@ -175,7 +152,6 @@ def main():
             if args.in_place:
                 dst = build_dst_inplace(src, k)
             else:
-                # costruzione gerarchia relativa rispetto alla prima root
                 first_root = Path(args.in_roots[0]).resolve()
                 try:
                     rel_parent = src.parent.resolve().relative_to(first_root)

@@ -1,18 +1,3 @@
-# ============================
-# FAST TRAIN (frames preprocessati) - ViT-B/16
-# Approccio "tipo Yermakov et al. 2025", ma:
-#   - CLIP visual encoder (ViT-B/16)
-#   - Linear head (no cosine head)
-#   - LN-tuning (fine-tuning solo delle LayerNorm del visual encoder)
-#   - L2-normalization delle feature prima del classifier
-#   - Adam, LR basso + warmup + cosine decay
-#   - Test per-FRAME + per-VIDEO (media su 32 frame)
-#   - Early stopping su AUC-ROC per-VIDEO:
-#       * dopo ogni epoch valutazione su test
-#       * se AUC video non migliora per PATIENCE epoche di fila -> stop
-# Configurato per GPU T4 (FP16 + GradScaler + gradient accumulation)
-# ============================
-
 import os, math, random, numpy as np, pandas as pd
 from pathlib import Path
 from PIL import Image
@@ -24,34 +9,32 @@ import clip
 from collections import Counter, defaultdict
 from sklearn.metrics import roc_auc_score
 
-# ---------- CONFIG per T4 / training ----------
-
 MODEL_NAME = "ViT-B/16"
 EPOCHS = 5
 BATCH_SIZE = 16
-ACCUM_STEPS = 8             # effettivo 128
+ACCUM_STEPS = 8             # effective 128
 NUM_WORKERS = 4
 
-# LRs e scheduler: LR basso + warmup + cosine decay
-BASE_LR = 3e-4             # LR massimo
-MIN_LR = 1e-5              # LR minimo a fine training
-WARMUP_RATIO = 0.05      # 0% dei passi in warmup
-WEIGHT_DECAY = 0          # niente weight decay
+# LRs and scheduler
+BASE_LR = 3e-4           
+MIN_LR = 1e-5            
+WARMUP_RATIO = 0.05      
+WEIGHT_DECAY = 0        
 
 USE_WEIGHTED_SAMPLER = False
-USE_CLASS_WEIGHTS = False   # paper non fa reweight esplicito
+USE_CLASS_WEIGHTS = False  
 
 VIDEO_DECISION_THRESHOLD = 0.5
 SEED = 1
 
-# Early stopping: fermati se per 2 epoche di fila non migliora
-PATIENCE = 6          # 2 epoche consecutive senza miglioramento
-MIN_DELTA = 0.0       # qualunque miglioramento > 0 vale come "improved"
+# Early stopping
+PATIENCE = 6          
+MIN_DELTA = 0.0      
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 IS_CUDA = (DEVICE == "cuda")
 
-# Directory (come nel tuo script)
+# Directory
 DATA_DIR = "/home/giadapoloni/preprocessed_frames"
 TEST_REAL_DIR = "/home/giadapoloni/C_validation/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_validation/C_fake"
@@ -60,7 +43,6 @@ RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip_test_metrics_global_linear
 RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip_test_metrics_video_linear_ln.csv")
 SAVE_PATH = os.path.join(RESULTS_DIR, "clip_linear_ln.pt")
 
-# AMP: FP16 per T4 (solo se CUDA)
 amp_dtype = torch.float16
 scaler = torch.amp.GradScaler(device='cuda', enabled=IS_CUDA)
 
@@ -72,9 +54,8 @@ def autocast_ctx():
         def __exit__(self, exc_type, exc, tb): pass
     return _NullCtx()
 
-# ---------- Utility & dataset ----------
 
-IMG_EXTS = {".jpg"}  # come nel tuo script originale
+IMG_EXTS = {".jpg"} 
 
 def set_seed(seed):
     random.seed(seed)
@@ -85,7 +66,7 @@ def set_seed(seed):
 
 class LinearHead(nn.Module):
     """
-    Linear classifier: CLIP visual embedding -> logits
+    Linear classifier
     """
     def __init__(self, in_dim, n_classes=2):
         super().__init__()
@@ -96,7 +77,7 @@ class LinearHead(nn.Module):
 
 def enable_ln_tuning_on_visual(visual_module):
     """
-    LN-tuning: congela TUTTO e sblocca solo weight/bias delle LayerNorm nel visual encoder.
+    LN-tuning
     """
     for p in visual_module.parameters():
         p.requires_grad = False
@@ -143,7 +124,7 @@ def collect_test_items(real_dir, fake_dir):
 class FrameDataset(Dataset):
     def __init__(self, items, preprocess):
         self.items = items
-        self.preprocess = preprocess     # SOLO preprocess CLIP, come nel tuo script
+        self.preprocess = preprocess    
 
     def __len__(self):
         return len(self.items)
@@ -169,7 +150,7 @@ class TestFrameDataset(Dataset):
 
 def build_train_loader(preprocess):
     items = collect_frames(DATA_DIR)
-    assert len(items) > 0, "Nessun frame trovato in DATA_DIR."
+    assert len(items) > 0, "No frame found in DATA_DIR."
     ds = FrameDataset(items, preprocess)
     persistent = (NUM_WORKERS > 0)
     if USE_WEIGHTED_SAMPLER:
@@ -223,18 +204,15 @@ def build_optimizer_and_scheduler(head, tuned_params, total_steps):
 
     warmup_steps = max(1, int(WARMUP_RATIO * total_steps))
 
-    # warmup lineare -> poi cosine decay fino a MIN_LR
+    # linear warmup
     def lr_mult(step):
-        # step parte da 0, ma scheduler usa il numero di chiamate
         if step < warmup_steps:
-            # LR parte da MIN_LR e sale linearmente fino a BASE_LR
             warmup_factor = float(step + 1) / float(warmup_steps)
             return (MIN_LR / BASE_LR) + (1.0 - MIN_LR / BASE_LR) * warmup_factor
 
-        # parte di decay
+        # decay 
         progress = (step - warmup_steps) / max(1, total_steps - warmup_steps)
-        cos_factor = 0.5 * (1 + math.cos(math.pi * progress))  # 1 -> 0
-        # interpola tra BASE_LR e MIN_LR
+        cos_factor = 0.5 * (1 + math.cos(math.pi * progress)) 
         lr_factor = (MIN_LR / BASE_LR) + (1.0 - MIN_LR / BASE_LR) * cos_factor
         return lr_factor
 
@@ -245,8 +223,6 @@ def build_optimizer_and_scheduler(head, tuned_params, total_steps):
     return optimizer, scheduler
 
 def extract_features(clip_model, imgs):
-    # encode_image di CLIP produce già feature "quasi" normalizzate,
-    # applichiamo comunque L2 norm esplicita per seguire il paper.
     z = clip_model.encode_image(imgs)
     z = F.normalize(z, dim=-1)
     return z
@@ -257,8 +233,6 @@ def predict_batch(clip_model, head, imgs):
     z = F.normalize(z, dim=-1)
     logits = head(z)
     return logits
-
-# ---------- EVALUATION (frame + video) ----------
 
 @torch.no_grad()
 def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose=False):
@@ -281,7 +255,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         y_true += list(labels)
         prob_fake += batch_prob_fake.tolist()
 
-        # video-level: dir padre come id video, max 32 frame/video
+        # video-level
         for pth, lab, pr in zip(paths, labels, batch_prob_fake):
             p = Path(pth)
             video_id = str(p.parent)
@@ -290,7 +264,6 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
             if video_id not in per_video_labels:
                 per_video_labels[video_id] = int(lab)
 
-    # ---- frame-level metrics ----
     y_true_arr = np.array(y_true, dtype=int)
     prob_fake_arr = np.array(prob_fake, dtype=float)
     y_pred_arr = (prob_fake_arr >= 0.5).astype(int)
@@ -321,7 +294,6 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         "threshold": 0.5,
     }
 
-    # ---- video-level metrics ----
     video_ids = sorted(per_video_probs.keys())
     if len(video_ids) == 0:
         video_metrics = None
@@ -364,7 +336,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         }
 
     if verbose:
-        print("===== METRICHE GLOBALI (per-FRAME) =====")
+        print("METRICS PER FRAME")
         print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
         print(f"Precision: {frame_metrics['precision']:.4f}")
         print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -376,7 +348,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         print(f"TP={frame_metrics['TP']}  TN={frame_metrics['TN']}  FP={frame_metrics['FP']}  FN={frame_metrics['FN']}  N={frame_metrics['N']}")
 
         if video_metrics is not None:
-            print("===== METRICHE GLOBALI (per-VIDEO, avg 32 frame) =====")
+            print("METRICS PER VIDEO (avg. over 32 frames)")
             print(f"Videos   : {video_metrics['N_videos']}")
             print(f"Accuracy : {video_metrics['accuracy']:.4f}")
             print(f"Precision: {video_metrics['precision']:.4f}")
@@ -391,40 +363,35 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
                 f"FP={video_metrics['FP']}  FN={video_metrics['FN']}"
             )
         else:
-            print("Nessun gruppo video trovato per il test per-VIDEO.")
+            print("No video group found.")
 
     return frame_metrics, video_metrics
 
-# ---------- Training + Test con early stopping su AUC video ----------
 
 def train_and_eval():
     set_seed(SEED)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    # 1) Carica CLIP (modello + preprocess)
     clip_model, preprocess = clip.load(MODEL_NAME, device=DEVICE, jit=False)
 
-    # 2) Porta in FP32 per stabilità con GradScaler
     clip_model.float()
 
-    # 3) LN-tuning sul visual encoder
     tuned_params = enable_ln_tuning_on_visual(clip_model.visual)
 
-    # opzionale: disabilita completamente il text encoder, tanto non lo usiamo
     for p in clip_model.transformer.parameters():
         p.requires_grad = False
     clip_model.logit_scale.requires_grad = False
 
-    # 4) Linear head
+    # Linear head
     embed_dim = clip_model.visual.output_dim
     head = LinearHead(embed_dim, 2).to(DEVICE)
 
-    # 5) Dataloader
+    # Dataloader
     train_loader = build_train_loader(preprocess)
     test_loader = build_test_loader(preprocess)
 
-    # 6) Loss (solo cross-entropy)
+    # Loss 
     if USE_CLASS_WEIGHTS:
         counts = Counter([it["label"] for it in collect_frames(DATA_DIR)])
         total = sum(counts.values())
@@ -437,12 +404,11 @@ def train_and_eval():
         class_weights = None
     ce = nn.CrossEntropyLoss(weight=class_weights)
 
-    # 7) Scheduler (warmup + cosine decay su passi effettivi)
+    # Scheduler (warmup + cosine decay)
     steps_per_epoch = (len(train_loader) + ACCUM_STEPS - 1) // ACCUM_STEPS
     total_steps = EPOCHS * steps_per_epoch
     optimizer, scheduler = build_optimizer_and_scheduler(head, tuned_params, total_steps)
 
-    # Mettiamo in train: visual (per LN) + head
     clip_model.visual.train()
     head.train()
 
@@ -457,7 +423,6 @@ def train_and_eval():
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{EPOCHS}")
         optimizer.zero_grad(set_to_none=True)
 
-        # ---------- TRAIN LOOP ----------
         for step, (imgs, y) in enumerate(pbar, 1):
             imgs = imgs.to(DEVICE, non_blocking=True)
             y = torch.as_tensor(y, device=DEVICE)
@@ -492,7 +457,6 @@ def train_and_eval():
             running += loss.item()
             pbar.set_postfix(loss=running / max(1, step))
 
-        # ---------- VALIDATION + EARLY STOPPING ----------
         print(f"\nValutazione su test dopo epoch {epoch}...")
         frame_m, video_m = evaluate(
             clip_model, head, test_loader, DEVICE,
@@ -501,18 +465,17 @@ def train_and_eval():
         )
 
         if video_m is None or np.isnan(video_m["auc_roc"]):
-            print("⚠ Nessun video o AUC video NaN in validazione, salto early stopping per questa epoch.")
+            print("Nessun video o AUC video NaN in validazione, salto early stopping per questa epoch.")
             current_auc_v = float("nan")
             improved = False
         else:
             current_auc_v = video_m["auc_roc"]
             print(f"[Val] Epoch {epoch} - video AUC: {current_auc_v:.4f}")
 
-            # miglioramento "reale" solo se supera best + min_delta
             improved = current_auc_v > (best_auc_v + MIN_DELTA)
 
         if improved:
-            print("✓ Nuovo best modello (AUC video migliorata). Salvataggio checkpoint...")
+            print("New best model (better AUC). Saving checkpoint...")
             best_auc_v = current_auc_v
             best_epoch = epoch
             epochs_no_improve = 0
@@ -527,18 +490,16 @@ def train_and_eval():
             torch.save(ckpt, SAVE_PATH)
         else:
             epochs_no_improve += 1
-            print(f"Nessun miglioramento di AUC video. epochs_no_improve = {epochs_no_improve}/{PATIENCE}")
+            print(f"No improving in video AUC. epochs_no_improve = {epochs_no_improve}/{PATIENCE}")
             if epochs_no_improve >= PATIENCE:
-                print("Early stopping: raggiunta patience senza miglioramento di AUC video. Stop training.")
+                print("Early stopping. Stop training.")
                 break
 
-        # se continuiamo, rimettiamo in train per epoch successiva
         clip_model.visual.train()
         head.train()
 
     print(f"\nTraining terminato. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
 
-    # ----- TEST FINALE sul best checkpoint -----
     print("Ricarico il best checkpoint e calcolo metriche finali...")
     ckpt = torch.load(SAVE_PATH, map_location=DEVICE)
     head.load_state_dict(ckpt["head"])
@@ -550,18 +511,16 @@ def train_and_eval():
         verbose=True
     )
 
-    # Salvataggio CSV (frame-level)
     os.makedirs(os.path.dirname(RESULTS_CSV_METRICS), exist_ok=True)
     metrics_df = pd.DataFrame([frame_metrics])
     metrics_df.to_csv(RESULTS_CSV_METRICS, index=False)
-    print(f"✓ Salvato CSV metriche globali (frame) in {RESULTS_CSV_METRICS}")
+    print(f"Salvato CSV metriche globali (frame) in {RESULTS_CSV_METRICS}")
 
-    # Salvataggio CSV (video-level)
     if video_metrics is not None:
         os.makedirs(os.path.dirname(RESULTS_CSV_METRICS_VIDEO), exist_ok=True)
         metrics_vid_df = pd.DataFrame([video_metrics])
         metrics_vid_df.to_csv(RESULTS_CSV_METRICS_VIDEO, index=False)
-        print(f"✓ Salvato CSV metriche globali (video) in {RESULTS_CSV_METRICS_VIDEO}")
+        print(f"Salvato CSV metriche globali (video) in {RESULTS_CSV_METRICS_VIDEO}")
     else:
         print("Nessun video per metriche video-level, CSV video non creato.")
 

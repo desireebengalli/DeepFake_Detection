@@ -1,13 +1,8 @@
-#!/usr/bin/env python3
 import os, glob, json, cv2, numpy as np
 from pathlib import Path
 
-# -----------------------
-# Config
-# -----------------------
 BASE_FRAMES = "/home/giadapoloni/C_extracted_frames"
 IN_ROOTS = [
-    # os.path.join(BASE_FRAMES, "C_real"),
     os.path.join(BASE_FRAMES, "C_fake"),
 ]
 OUT_ROOT = Path("/home/giadapoloni/C_preprocessed_frames")
@@ -16,21 +11,15 @@ MARGIN = 1.3
 DET_THRESH = 0.3
 JPEG_QUALITY = 92
 
-# Threading “gentile” per decodifica/salvataggio
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
 cv2.setUseOptimized(True)
 cv2.setNumThreads(2)
 
-# -----------------------
-# Imports modello
-# -----------------------
 from insightface.app import FaceAnalysis
 import onnxruntime as ort
 
-# -----------------------
 # Helpers
-# -----------------------
 REF_5PTS_112 = np.array([
     [38.2946,51.6963],[73.5318,51.5014],[56.0252,71.7366],
     [41.5493,92.3655],[70.7299,92.2041]
@@ -100,15 +89,12 @@ def out_dir_for(video_dir):
     out_dir = OUT_ROOT / root_tag / rel
     return out_dir
 
-# -----------------------
-# Core: processa una cartella video
-# -----------------------
+# Core: processes a video folder
 def process_video_dir_with_app(video_dir, app):
     out_dir = out_dir_for(video_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     meta_path = out_dir / "meta.json"
 
-    # Se esiste già il meta → skip intera cartella (idempotente)
     if meta_path.exists():
         print(f"[SKIP] {video_dir} (meta.json trovato)")
         return 0, 0
@@ -132,7 +118,7 @@ def process_video_dir_with_app(video_dir, app):
             fail += 1
             continue
 
-        # volto più grande
+        # biggest face
         areas = [(f.bbox[2]-f.bbox[0])*(f.bbox[3]-f.bbox[1]) for f in faces]
         f = faces[int(np.argmax(areas))]
         x1,y1,x2,y2 = [int(v) for v in f.bbox]
@@ -168,13 +154,9 @@ def process_video_dir_with_app(video_dir, app):
     print(f"[DONE] {video_dir} -> ok:{ok} fail:{fail}")
     return ok, fail
 
-# -----------------------
-# Main
-# -----------------------
 def main():
     OUT_ROOT.mkdir(parents=True, exist_ok=True)
 
-    # 1) Inizializza ONNXRuntime su GPU se disponibile
     providers = ort.get_available_providers()
     use_gpu = "CUDAExecutionProvider" in providers
     if not use_gpu:
@@ -182,12 +164,10 @@ def main():
     else:
         print("[INFO] ONNX providers:", providers)
 
-    # 2) Inizializza il detector (solo detection; stessa qualità)
     app = FaceAnalysis(name="buffalo_l", allowed_modules=['detection'])
     app.prepare(ctx_id=(0 if use_gpu else -1), det_thresh=DET_THRESH, det_size=(640, 640))
     _ = app.get(np.zeros((640,640,3), dtype=np.uint8))  # warmup
 
-    # 3) Scansione cartelle e skip di quelle già processate
     all_vdirs = []
     for root in IN_ROOTS:
         vdirs = list_video_dirs(root)
@@ -201,19 +181,19 @@ def main():
             all_vdirs.append(vd)
 
     if not all_vdirs:
-        print("Niente da processare (tutto già fatto).")
+        print("Nothing to process (everything already done).")
         return
     
     print(f"[ROOT] {root} -> {len(vdirs)} video")
 
     if len(vdirs) == 0:
-        print("[DEBUG] Contenuto root:", os.listdir(root)[:10])
+        print("[DEBUG] Content root:", os.listdir(root)[:10])
         # ispeziona una sottocartella a caso, se esiste
         subs = [os.path.join(root, d) for d in os.listdir(root) if os.path.isdir(os.path.join(root,d))]
         if subs:
             samp = subs[0]
-            print("[DEBUG] Esempio sottocartella:", samp)
-            print("[DEBUG] Esempi file:", os.listdir(samp)[:10])
+            print("[DEBUG] Example subfolder:", samp)
+            print("[DEBUG] Example file:", os.listdir(samp)[:10])
 
 
     # 4) Processo singolo (ottimo per GPU; evita contention sulla VRAM)
@@ -223,7 +203,7 @@ def main():
         total_ok += ok; total_fail += fail; total_vids += 1
         print(f"[ACCUM] video={total_vids} ok={total_ok} fail={total_fail}")
 
-    print(f"=== FINITO ===  Video: {total_vids} | Frames OK: {total_ok} | Frames FAIL: {total_fail}")
+    print(f"FINISHED Video: {total_vids} | Frames OK: {total_ok} | Frames FAIL: {total_fail}")
 
 if __name__ == "__main__":
     main()

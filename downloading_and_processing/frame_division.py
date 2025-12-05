@@ -8,57 +8,36 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# =========================
-# Config & Paths
-# =========================
-
-# Radice del dataset
 ROOT = "/home/giadapoloni/dataset"
-
-# Directory da processare con label associata
 TARGET_DIRS: List[Tuple[str, str]] = [
-    # (f"{ROOT}/Celeb-real", "original"),
     (f"{ROOT}", "fake"),
 ]
 
-# Dove scrivere i frame
-# OUT/real_ff/<video_id>/001.jpg
-# OUT/fake_ff/<method>/<video_id>/001.jpg  (qui method = "fake")
 OUT = Path("/home/giadapoloni/C_extracted_frames/C_fake")
 
 FRAMES_TARGET   = 32
 MIN_FRAMES_OK   = 16
 
-# Azioni su file
 DRY_RUN         = False
 USE_TRASH       = False
 TRASH_DIR       = Path("trash_videos")
 
-# Parallelismo
 WORKERS = min(4, (os.cpu_count() or 4))
 FFMPEG_THREADS_PER_PROC = 1
 
-# Formato immagini
 IMG_EXT        = ".jpg"
-JPEG_QSCALE    = "3"       # 2–5 tipico (più alto = più compresso)
+JPEG_QSCALE    = "3"     
 WEBP_QUALITY   = "85"
 
-# Accelerazione HW (decodifica)
 USE_HWACCEL       = False
-HWACCEL_BACKEND   = "None"   # "cuda", "vaapi", "auto", oppure "None"
+HWACCEL_BACKEND   = "None"
 
-# Estensioni video considerate
 VIDEO_EXTS = (".mp4", ".MP4")
-
-# =========================
-# Helpers
-# =========================
 
 def ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
 
 def list_videos_in_dir(dir_path: str) -> List[str]:
-    """Restituisce la lista di video (non ricorsiva) in dir_path."""
     paths: List[str] = []
     if not os.path.isdir(dir_path):
         print(f"[WARN] Directory non trovata: {dir_path}")
@@ -72,7 +51,6 @@ def vid_id_from_path(p: str) -> str:
     return Path(p).stem
 
 def slugify(label: str) -> str:
-    """minuscolo + solo a-z0-9-"""
     s = label.strip().lower()
     s = re.sub(r"[^a-z0-9]+", "-", s)
     s = re.sub(r"-+", "-", s).strip("-")
@@ -101,11 +79,7 @@ def out_subdir_for(label: str) -> Path:
     """Mappa le label in cartelle di output."""
     if label.lower() == "original":
         return OUT / "C_real"
-    return OUT / "C_fake" #/ slugify(label)
-
-# =========================
-# FFmpeg utils
-# =========================
+    return OUT / "C_fake"
 
 def video_duration(video: str) -> Optional[float]:
     try:
@@ -119,7 +93,6 @@ def video_duration(video: str) -> Optional[float]:
         return None
 
 def extract_uniform_n(video: str, dst_dir: Path, n: int) -> int:
-    """Estrae ~n frame uniformi, li porta a 512x512 e salva come JPG/WebP."""
     ensure_dir(dst_dir)
     dur = video_duration(video)
     fps = 1 if not dur or dur <= 0 else max(n / dur, 1e-3)
@@ -164,10 +137,6 @@ def extract_uniform_n(video: str, dst_dir: Path, n: int) -> int:
 
     subprocess.run(cmd, check=True)
     return sum(1 for _ in dst_dir.glob(f"*{IMG_EXT}"))
-
-# =========================
-# Processing
-# =========================
 
 def process_dir(dir_path: str, label: str):
     videos = list_videos_in_dir(dir_path)
@@ -230,7 +199,7 @@ def main():
         process_dir(dir_path, label)
 
     ext = IMG_EXT.lstrip(".")
-    print("Done. Struttura output:")
+    print("Done. Output structure:")
     print(f"- {OUT}/C_fake/fake/<video_id>/001..{ext}")
     if DRY_RUN:
         print("Note: DRY_RUN=True → no video deleted of moved to the bin.")

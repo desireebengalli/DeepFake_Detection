@@ -42,11 +42,6 @@ class LinearHead(nn.Module):
 
 # Dataset
 def collect_test_items(real_dir, fake_dir):
-    """
-    Gather photos from real and fake directories.
-    Seleziona fino a 500 video real e 500 fake (se disponibili),
-    usando tutti i frame .jpg di ciascun video.
-    """
     items = []
 
     # REAL videos
@@ -105,24 +100,19 @@ def build_test_loader(preprocess, batch_size=64, num_workers=4):
         num_workers=num_workers, pin_memory=True, drop_last=False
     )
 
-# Loading the model
 @torch.no_grad()
 def load_trained_models_for_visualization():
     print("Loading CLIP model...")
     clip_model, clip_preprocess = clip.load(MODEL_NAME, device=DEVICE, jit=False)
 
-    # Embedding size (512 per ViT-B/16)
     embed_dim = clip_model.text_projection.shape[1]
 
-    # Initialize the head
     head = LinearHead(embed_dim, n_classes=2).to(DEVICE)
 
-    # Load the checkpoint
     assert os.path.isfile(SAVE_PATH), f"Checkpoint not found: {SAVE_PATH}"
     print(f"Loading checkpoint from: {SAVE_PATH}")
     ckpt = torch.load(SAVE_PATH, map_location=DEVICE)
 
-    # Load only visual and head weights
     _ = clip_model.visual.load_state_dict(ckpt["visual"], strict=False)
     head.load_state_dict(ckpt["head"])
 
@@ -139,7 +129,6 @@ def load_trained_models_for_visualization():
 
 
 
-# Embedding extraction (video-level)
 @torch.no_grad()
 def extract_video_embeddings_and_labels(clip_model, clip_preprocess):
     test_loader = build_test_loader(clip_preprocess)
@@ -178,8 +167,6 @@ def extract_video_embeddings_and_labels(clip_model, clip_preprocess):
     print(f"Real videos: {num_real}, Fake videos: {num_fake}")
     return Z, Y
 
-
-# Logit distributions plot
 @torch.no_grad()
 def plot_logit_distributions(Z, Y, head, output_path):
     """
@@ -188,7 +175,7 @@ def plot_logit_distributions(Z, Y, head, output_path):
     """  
 
     z_t = torch.from_numpy(Z).float().to(DEVICE)
-    logits = head(z_t).cpu().numpy()      # shape [N, 2]
+    logits = head(z_t).cpu().numpy()     
 
     scores_fake = logits[:, 1]
 
@@ -200,13 +187,11 @@ def plot_logit_distributions(Z, Y, head, output_path):
 
     plt.figure(figsize=(8, 6))
 
-    # 1. Histogram REAL/Fake 
     plt.hist(real_scores, bins=30, alpha=0.3, density=True,
              label="REAL (0)", color="blue")
     plt.hist(fake_scores, bins=30, alpha=0.3, density=True,
              label="FAKE (1)", color="red")
 
-    # 2. KDE for REAL
     kde_real = gaussian_kde(real_scores)
     x_min = min(real_scores.min(), fake_scores.min())
     x_max = max(real_scores.max(), fake_scores.max())

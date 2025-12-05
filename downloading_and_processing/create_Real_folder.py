@@ -26,5 +26,5 @@ for src in src_dirs:
 
                 shutil.copy2(src_path, dst_path)
                 count += 1
-
-print(f"Copiate {count} immagini nella cartella {dst_dir}")
+                
+print(f"Copied {count} images to folder {dst_dir}")

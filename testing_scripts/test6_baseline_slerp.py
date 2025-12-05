@@ -9,9 +9,6 @@ import clip
 from collections import defaultdict
 from sklearn.metrics import roc_auc_score
 
-# =========================
-# CONFIG
-# =========================
 
 MODEL_NAME = "ViT-B/16"
 
@@ -49,17 +46,7 @@ def autocast_ctx():
 
     return _NullCtx()
 
-
-# =========================
-# MODEL HEAD (same as training)
-# =========================
-
 class LinearHead(nn.Module):
-    """
-    Simple linear classifier on top of CLIP visual features.
-    Matches the head used in your training script
-    (keys: fc.weight, fc.bias).
-    """
     def __init__(self, in_dim, n_classes=2):
         super().__init__()
         self.fc = nn.Linear(in_dim, n_classes)
@@ -67,15 +54,7 @@ class LinearHead(nn.Module):
     def forward(self, x):
         return self.fc(x)
 
-
-# =========================
-# DATASET
-# =========================
-
 def collect_test_items(real_dir, fake_dir):
-    """
-    Collect test frames from separate real/fake directories.
-    """
     items = []
     for root, label in [(real_dir, 0), (fake_dir, 1)]:
         rroot = Path(root)
@@ -87,10 +66,6 @@ def collect_test_items(real_dir, fake_dir):
 
 
 class TestFrameDataset(Dataset):
-    """
-    Test dataset, returning image, label and path
-    to aggregate video-level metrics.
-    """
     def __init__(self, items, preprocess):
         self.items = items
         self.preprocess = preprocess
@@ -122,16 +97,8 @@ def build_test_loader(preprocess):
     )
 
 
-# =========================
-# PREDICTION & EVALUATION
-# =========================
-
 @torch.no_grad()
 def predict_batch(clip_model, head, imgs):
-    """
-    Forward pass for a batch of images: CLIP visual + linear head,
-    with L2-normalized features (same as in training).
-    """
     z = clip_model.encode_image(imgs)
     z = F.normalize(z, dim=-1)
     logits = head(z)
@@ -140,10 +107,6 @@ def predict_batch(clip_model, head, imgs):
 
 @torch.no_grad()
 def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose=False):
-    """
-    Evaluate on a frame-level and aggregate metrics also at video-level
-    by averaging up to 32 frames per video.
-    """
     clip_model.eval()
     head.eval()
 
@@ -172,7 +135,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
             if video_id not in per_video_labels:
                 per_video_labels[video_id] = int(lab)
 
-    # -------- Frame-level metrics --------
+    # Frame-level metrics
     y_true_arr = np.array(y_true, dtype=int)
     prob_fake_arr = np.array(prob_fake, dtype=float)
     y_pred_arr = (prob_fake_arr >= 0.5).astype(int)
@@ -203,7 +166,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         "threshold": 0.5,
     }
 
-    # -------- Video-level metrics --------
+    # Video-level metrics
     video_ids = sorted(per_video_probs.keys())
     if len(video_ids) == 0:
         video_metrics = None
@@ -246,7 +209,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         }
 
     if verbose:
-        print("===== GLOBAL METRICS (per-FRAME) =====")
+        print("GLOBAL METRICS (per-FRAME)")
         print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
         print(f"Precision: {frame_metrics['precision']:.4f}")
         print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -261,7 +224,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         )
 
         if video_metrics is not None:
-            print("===== GLOBAL METRICS (per-VIDEO, avg 32 frame) =====")
+            print("GLOBAL METRICS (per-VIDEO, avg 32 frame)")
             print(f"Videos   : {video_metrics['N_videos']}")
             print(f"Accuracy : {video_metrics['accuracy']:.4f}")
             print(f"Precision: {video_metrics['precision']:.4f}")
@@ -280,37 +243,26 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
 
     return frame_metrics, video_metrics
 
-
-# =========================
-# MAIN
-# =========================
-
 def main():
     print(f"Using device: {DEVICE}")
 
-    # Load checkpoint
     ckpt = torch.load(CKPT_PATH, map_location=DEVICE)
     model_name = ckpt.get("model_name", MODEL_NAME)
     print(f"Loaded checkpoint from: {CKPT_PATH}")
     print(f"Model name in checkpoint: {model_name}")
 
-    # Load CLIP backbone
     clip_model, preprocess = clip.load(model_name, device=DEVICE, jit=False)
     clip_model.float()
 
-    # Load tuned visual encoder
     clip_model.visual.load_state_dict(ckpt["visual"])
 
-    # Freeze all parameters (pure inference)
     for p in clip_model.parameters():
         p.requires_grad = False
 
-    # Build linear head and load weights
     embed_dim = clip_model.visual.output_dim
     head = LinearHead(embed_dim, n_classes=2).to(DEVICE)
     head.load_state_dict(ckpt["head"])
 
-    # Build test loader
     test_loader = build_test_loader(preprocess)
 
     # Evaluate

@@ -68,7 +68,7 @@ def set_seed(seed):
 
 class LinearHead(nn.Module):
     """
-    Simple linear classifier on top of CLIP visual features.
+    linear classifier
     """
     def __init__(self, in_dim, n_classes=2):
         super().__init__()
@@ -79,7 +79,7 @@ class LinearHead(nn.Module):
 
 def enable_ln_tuning_on_visual(visual_module):
     """
-    Enable fine-tuning of LayerNorm parameters in the visual encoder.
+    fine-tuning of LayerNorm parameters
     """
     tuned_params = []
     for m in visual_module.modules():
@@ -94,7 +94,7 @@ def enable_ln_tuning_on_visual(visual_module):
 
 def enable_bias_tuning_on_mlp(visual_module):
     """
-    Enable fine-tuning of MLP biases in the visual transformer blocks.
+    fine-tuning of MLP biases
     """
     tuned = []
     if hasattr(visual_module, "transformer") and hasattr(visual_module.transformer, "resblocks"):
@@ -109,13 +109,6 @@ def enable_bias_tuning_on_mlp(visual_module):
     return tuned
 
 def collect_frames(root_dir):
-    """
-    Collect training frames from preprocessed directory.
-
-    Expected structure:
-      root_dir/real_ff/<video_id>/*.jpg  -> label 0
-      root_dir/fake_ff/<method>/<video_id>/*.jpg  -> label 1
-    """
     root = Path(root_dir)
     items = []
     real_dir = root / "real_ff"
@@ -134,9 +127,6 @@ def collect_frames(root_dir):
     return items
 
 def collect_test_items(real_dir, fake_dir):
-    """
-    Collect test frames from separate real/fake directories.
-    """
     items = []
     for root, label in [(real_dir, 0), (fake_dir, 1)]:
         rroot = Path(root)
@@ -147,9 +137,6 @@ def collect_test_items(real_dir, fake_dir):
     return items
 
 class FrameDataset(Dataset):
-    """
-    Training dataset for frame-level supervision.
-    """
     def __init__(self, items, preprocess):
         self.items = items
         self.preprocess = preprocess     
@@ -163,9 +150,6 @@ class FrameDataset(Dataset):
         return img, self.items[i]["label"]
 
 class TestFrameDataset(Dataset):
-    """
-    Test dataset, also returning the path to reconstruct video-level metrics.
-    """
     def __init__(self, items, preprocess):
         self.items = items
         self.preprocess = preprocess
@@ -225,9 +209,6 @@ def build_test_loader(preprocess):
     )
 
 def build_optimizer_and_scheduler(head, tuned_params, total_steps):
-    """
-    Build AdamW optimizer and a linear-warmup + cosine-decay LR scheduler.
-    """
     params = list(head.parameters()) + [p for p in tuned_params if p.requires_grad]
     optimizer = torch.optim.AdamW(
         params,
@@ -257,21 +238,12 @@ def build_optimizer_and_scheduler(head, tuned_params, total_steps):
     return optimizer, scheduler
 
 def extract_features(clip_model, imgs):
-    """
-    Encode images with CLIP visual encoder and L2-normalize features.
-    """
     z = clip_model.encode_image(imgs)
     z = F.normalize(z, dim=-1)
     return z
 
 def slerp_within_class(z, y, t_min=0.0, t_max=0.5, eps=1e-7):
-    """
-    SLERP in feature space (unit vectors) *within each class*.
-    For each class c, for each sample i we perform SLERP(z_i, z_j, t)
-    with j sampled randomly from the same class. We keep a 1-1 alignment
-    with the original labels: the output has the same shape/order as z.
-    """
-    # Ensure unit norm (should already hold, but we enforce it)
+    # Ensure unit norm
     z = F.normalize(z, dim=-1)
 
     z_out = torch.empty_like(z)
@@ -282,25 +254,20 @@ def slerp_within_class(z, y, t_min=0.0, t_max=0.5, eps=1e-7):
         if idx.numel() == 0:
             continue
         if idx.numel() == 1:
-            # only one instance of this class in the batch: no SLERP possible
             z_out[idx] = z[idx]
             continue
 
-        z_c = z[idx]  # [Nc, D]
-        # random permutation within the class
+        z_c = z[idx]  
         perm = torch.randperm(z_c.size(0), device=z.device)
         z1 = z_c
         z2 = z_c[perm]
 
-        # t ~ U[t_min, t_max]
-        t = torch.rand(z_c.size(0), 1, device=z.device) * (t_max - t_min) + t_min  # [Nc, 1]
+        t = torch.rand(z_c.size(0), 1, device=z.device) * (t_max - t_min) + t_min  
 
-        # SLERP: z_slerp = (sin((1-t)*omega)/sin(omega))*z1 + (sin(t*omega)/sin(omega))*z2
-        dot = (z1 * z2).sum(-1, keepdim=True).clamp(-1 + eps, 1 - eps)  # [Nc, 1]
-        omega = torch.acos(dot)                                         # [Nc, 1]
-        sin_omega = torch.sin(omega)                                    # [Nc, 1]
+        dot = (z1 * z2).sum(-1, keepdim=True).clamp(-1 + eps, 1 - eps)  
+        omega = torch.acos(dot)                                         
+        sin_omega = torch.sin(omega)                                    
 
-        # Avoid division by zero: if sin(omega) ≈ 0, fallback to z1
         mask = sin_omega < eps
         slerped_c = (torch.sin((1 - t) * omega) / (sin_omega + eps)) * z1 + \
                     (torch.sin(t * omega) / (sin_omega + eps)) * z2
@@ -314,17 +281,6 @@ def slerp_within_class(z, y, t_min=0.0, t_max=0.5, eps=1e-7):
     return z_out
 
 def slerp_between_real_fake(z, y, t_cross=0.5, eps=1e-7):
-    """
-    SLERP between real (label 0) and fake (label 1).
-
-    We match real and fake samples in pairs, perform SLERP(z_real, z_fake, t_cross),
-    and label all mixed embeddings as fake (label = 1).
-
-    Returns:
-      z_mix: [M, D]  mixed real-fake embeddings
-      y_mix: [M]     all ones (fake)
-    If either real or fake is missing in the batch, returns (None, None).
-    """
     z = F.normalize(z, dim=-1)
 
     idx_real = (y == 0).nonzero(as_tuple=False).squeeze(-1)
@@ -339,10 +295,9 @@ def slerp_between_real_fake(z, y, t_cross=0.5, eps=1e-7):
     idx_real = idx_real[torch.randperm(idx_real.numel(), device=z.device)[:n_pairs]]
     idx_fake = idx_fake[torch.randperm(idx_fake.numel(), device=z.device)[:n_pairs]]
 
-    z_r = z[idx_real]  # [n_pairs, D]
-    z_f = z[idx_fake]  # [n_pairs, D]
+    z_r = z[idx_real] 
+    z_f = z[idx_fake] 
 
-    # fixed t_cross (e.g. 0.5) -> midpoint on the geodesic between real and fake
     t = torch.full((n_pairs, 1), float(t_cross), device=z.device)
 
     dot = (z_r * z_f).sum(-1, keepdim=True).clamp(-1 + eps, 1 - eps)
@@ -356,16 +311,12 @@ def slerp_between_real_fake(z, y, t_cross=0.5, eps=1e-7):
 
     z_mix = F.normalize(z_mix, dim=-1)
 
-    # All mixed embeddings are treated as fake
     y_mix = torch.ones(n_pairs, dtype=y.dtype, device=y.device)
 
     return z_mix, y_mix
 
 @torch.no_grad()
 def predict_batch(clip_model, head, imgs):
-    """
-    Forward pass for a batch of images: CLIP visual + linear head.
-    """
     z = clip_model.encode_image(imgs)
     z = F.normalize(z, dim=-1)
     logits = head(z)
@@ -374,10 +325,6 @@ def predict_batch(clip_model, head, imgs):
 # EVALUATION
 @torch.no_grad()
 def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose=False):
-    """
-    Evaluate on a frame-level and aggregate metrics also at video-level
-    by averaging up to 32 frames per video.
-    """
     clip_model.eval()
     head.eval()
 
@@ -480,7 +427,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         }
 
     if verbose:
-        print("===== GLOBAL METRICS (per-FRAME) =====")
+        print("GLOBAL METRICS (per-FRAME)")
         print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
         print(f"Precision: {frame_metrics['precision']:.4f}")
         print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -492,7 +439,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         print(f"TP={frame_metrics['TP']}  TN={frame_metrics['TN']}  FP={frame_metrics['FP']}  FN={frame_metrics['FN']}  N={frame_metrics['N']}")
 
         if video_metrics is not None:
-            print("===== GLOBAL METRICS (per-VIDEO, avg 32 frame) =====")
+            print("GLOBAL METRICS (per-VIDEO, avg 32 frame)")
             print(f"Videos   : {video_metrics['N_videos']}")
             print(f"Accuracy : {video_metrics['accuracy']:.4f}")
             print(f"Precision: {video_metrics['precision']:.4f}")
@@ -512,8 +459,6 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
     return frame_metrics, video_metrics
 
 
-# Training + Test with early stop (if applied)
-
 def train_and_eval():
     set_seed(SEED)
     torch.backends.cudnn.deterministic = True
@@ -531,7 +476,6 @@ def train_and_eval():
     tuned_bias = enable_bias_tuning_on_mlp(clip_model.visual)
     tuned_params = tuned_ln + tuned_bias
 
-    # freeze CLIP text transformer and logit_scale (if present)
     if hasattr(clip_model, "transformer"):
         for p in clip_model.transformer.parameters():
             p.requires_grad = False
@@ -546,7 +490,7 @@ def train_and_eval():
     train_loader = build_train_loader(preprocess)
     test_loader = build_test_loader(preprocess)
 
-    # Loss (cross-entropy with optional class weights)
+    # Loss
     if USE_CLASS_WEIGHTS:
         counts = Counter([it["label"] for it in collect_frames(DATA_DIR)])
         total = sum(counts.values())
@@ -585,13 +529,8 @@ def train_and_eval():
 
             # SLERP-based feature augmentation
             with autocast_ctx():
-                # original CLIP features
                 z = extract_features(clip_model, imgs)
-
-                # SLERP within each class (t in [0, 0.5])
                 z_intra = slerp_within_class(z, y, t_min=0.0, t_max=0.5)
-
-                # SLERP between real (0) and fake (1), all labeled as fake (1)
                 z_cross, y_cross = slerp_between_real_fake(z, y, t_cross=0.5)
 
                 if z_cross is not None:

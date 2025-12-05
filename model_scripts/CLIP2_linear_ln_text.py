@@ -381,12 +381,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
 
     return frame_metrics, video_metrics
 
-
-
-
-
-
-# ---------- Training 
+# Training 
 
 def train_and_eval():
     set_seed(SEED)
@@ -486,7 +481,7 @@ def train_and_eval():
             running += loss.item()
             pbar.set_postfix(loss=running / max(1, step))
 
-        # ---------- VALIDATION + EARLY STOPPING (if applied) ----------
+        # VALIDATION + EARLY STOPPING (if applied) 
         print(f"\nEvaluation on test after epoch {epoch}...")
         frame_m, video_m = evaluate(
             clip_model, head, test_loader, DEVICE, text_bank,

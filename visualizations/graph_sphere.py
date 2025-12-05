@@ -38,9 +38,6 @@ class LinearHead(nn.Module):
         return self.fc(x)
 
 def collect_test_items(real_dir, fake_dir):
-    """
-    Gather photos from real and fake directories.
-    """
     items = []
 
     # REAL videos
@@ -82,9 +79,6 @@ class TestFrameDataset(Dataset):
         return img, rec["label"], rec["video_id"]
 
 def build_test_loader(preprocess, batch_size=64, num_workers=4):
-    """
-    Build a DataLoader for (Celeb-test).
-    """
     items = collect_test_items(TEST_REAL_DIR, TEST_FAKE_DIR)
     assert len(items) > 0, "No image found"
 
@@ -96,15 +90,10 @@ def build_test_loader(preprocess, batch_size=64, num_workers=4):
 
 @torch.no_grad()
 def load_trained_models_for_visualization():
-    """
-    Loads CLIP model and linear head from checkpoint for visualization.
-    """
     clip_model, clip_preprocess = clip.load(MODEL_NAME, device=DEVICE, jit=False)
 
-    # Embedding size (512 per ViT-B/32)
     embed_dim = clip_model.text_projection.shape[1]
 
-    # Initialize the head
     head = LinearHead(embed_dim, n_classes=2).to(DEVICE)
 
     # Load the checkpoint
@@ -123,14 +112,11 @@ def load_trained_models_for_visualization():
     for p in head.parameters():
         p.requires_grad = False
 
-    print("✓ CLIP model and head loaded from checkpoint for visualization.")
+    print("CLIP model and head loaded from checkpoint for visualization.")
     return clip_model, head, clip_preprocess
 
 @torch.no_grad()
 def extract_embeddings_and_labels(clip_model, clip_preprocess):
-    """
-    Extracting embeddings from vision encoder CLIP (Celeb-test).
-    """
     test_loader = build_test_loader(clip_preprocess)
 
     video_embeds = {}
@@ -160,23 +146,16 @@ def extract_embeddings_and_labels(clip_model, clip_preprocess):
     Z = np.stack(Z_list, axis=0)
     Y = np.array(Y_list)
 
-    print(f"✓ Extracted Embeddings: {Z.shape[0]} samples, dim = {Z.shape[1]}")
+    print(f"Extracted Embeddings: {Z.shape[0]} samples, dim = {Z.shape[1]}")
     return Z, Y
 
 def project_to_3d_with_pca(Z):
-    """
-    Projecting 3D embeddings with PCA
-    """
+
     pca = PCA(n_components=3)
     Z3 = pca.fit_transform(Z)
     return Z3, pca
 
 def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA on Celeb-test)"):
-    """
-    Creatin the graph 3D:
-      - REAL (label=0) = blue
-      - FAKE (label=1) = red
-    """
     fig = plt.figure(figsize=(9, 7))
     ax = fig.add_subplot(111, projection='3d')
 
@@ -226,10 +205,8 @@ def plot_3d_embeddings(Z3, Y, title="CLIP Deepfake - Embedding 3D (PCA on Celeb-
 
     plt.show()
 
-# Check models from checkpoint
 clip_model_vis, head_vis, clip_preprocess_vis = load_trained_models_for_visualization()
 
-# Extract embeddings and label from test
 Z, Y = extract_embeddings_and_labels(
     clip_model_vis,
     clip_preprocess_vis

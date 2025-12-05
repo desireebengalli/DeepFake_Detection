@@ -456,8 +456,8 @@ def train_and_eval():
 
             running += loss.item()
             pbar.set_postfix(loss=running / max(1, step))
-
-        print(f"\nValutazione su test dopo epoch {epoch}...")
+        
+        print(f"\nValidating after epoch {epoch}...")
         frame_m, video_m = evaluate(
             clip_model, head, test_loader, DEVICE,
             video_threshold=VIDEO_DECISION_THRESHOLD,
@@ -465,7 +465,7 @@ def train_and_eval():
         )
 
         if video_m is None or np.isnan(video_m["auc_roc"]):
-            print("Nessun video o AUC video NaN in validazione, salto early stopping per questa epoch.")
+            print("No video or NaN video AUC in validation, skipping early stopping for this epoch.")
             current_auc_v = float("nan")
             improved = False
         else:
@@ -498,9 +498,9 @@ def train_and_eval():
         clip_model.visual.train()
         head.train()
 
-    print(f"\nTraining terminato. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
+    print(f"\nTraining ended. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
 
-    print("Ricarico il best checkpoint e calcolo metriche finali...")
+    print("Getting best model and computing final metrics...")
     ckpt = torch.load(SAVE_PATH, map_location=DEVICE)
     head.load_state_dict(ckpt["head"])
     clip_model.visual.load_state_dict(ckpt["visual"])
@@ -514,15 +514,15 @@ def train_and_eval():
     os.makedirs(os.path.dirname(RESULTS_CSV_METRICS), exist_ok=True)
     metrics_df = pd.DataFrame([frame_metrics])
     metrics_df.to_csv(RESULTS_CSV_METRICS, index=False)
-    print(f"Salvato CSV metriche globali (frame) in {RESULTS_CSV_METRICS}")
+    print(f"CSV with frame metrics saved in{RESULTS_CSV_METRICS}")
 
     if video_metrics is not None:
         os.makedirs(os.path.dirname(RESULTS_CSV_METRICS_VIDEO), exist_ok=True)
         metrics_vid_df = pd.DataFrame([video_metrics])
         metrics_vid_df.to_csv(RESULTS_CSV_METRICS_VIDEO, index=False)
-        print(f"Salvato CSV metriche globali (video) in {RESULTS_CSV_METRICS_VIDEO}")
+        print(f"CSV with video metrics saved in {RESULTS_CSV_METRICS_VIDEO}")
     else:
-        print("Nessun video per metriche video-level, CSV video non creato.")
+        print("No video for video-level metrics, CSV not created.")
 
 def main():
     train_and_eval()

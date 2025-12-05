@@ -21,7 +21,6 @@ def main():
     for root, dirs, files in os.walk(BASE):
         for d in dirs:
             video_dir = Path(root) / d
-            # se dentro ci sono immagini, applica la rinomina
             if any(f.is_file() and f.suffix.lower() in IMG_EXTS for f in video_dir.iterdir()):
                 add_prefix_in_dir(video_dir)
 

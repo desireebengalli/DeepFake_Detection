@@ -39,10 +39,10 @@ IS_CUDA = (DEVICE == "cuda")
 DATA_DIR = "/home/giadapoloni/preprocessed_frames"
 TEST_REAL_DIR = "/home/giadapoloni/C_validation/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_validation/C_fake"
-RESULTS_DIR = "/home/default/results/CLIP5_slerp_nocross"
-RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip5_slerp_nocross.csv")
-RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip5_slerp_nocross.csv")
-SAVE_PATH = os.path.join(RESULTS_DIR, "clip5_slerp_nocross.pt")
+RESULTS_DIR = "/home/default/results/CLIP6_slerp_nocross"
+RESULTS_CSV_METRICS = os.path.join(RESULTS_DIR, "clip6_slerp_nocross.csv")
+RESULTS_CSV_METRICS_VIDEO = os.path.join(RESULTS_DIR, "clip6_slerp_nocross.csv")
+SAVE_PATH = os.path.join(RESULTS_DIR, "clip6_slerp_nocross.pt")
 
 amp_dtype = torch.float16
 scaler = torch.amp.GradScaler(device='cuda', enabled=IS_CUDA)
@@ -274,7 +274,7 @@ def slerp_within_class(z, y, t_min=0.0, t_max=1.0, eps=1e-7):
         slerped_c = F.normalize(slerped_c, dim=-1)
 
         z_slerp_list.append(slerped_c)
-        y_slerp_list.append(y_c)     # stessa classe
+        y_slerp_list.append(y_c)     #same class
 
     if len(z_slerp_list) == 0:
         return z, y
@@ -282,7 +282,7 @@ def slerp_within_class(z, y, t_min=0.0, t_max=1.0, eps=1e-7):
     z_slerp = torch.cat(z_slerp_list, dim=0)
     y_slerp = torch.cat(y_slerp_list, dim=0)
 
-    # originali + augmentati
+    # orginal + augmented
     z_all = torch.cat([z, z_slerp], dim=0)
     y_all = torch.cat([y, y_slerp], dim=0)
 

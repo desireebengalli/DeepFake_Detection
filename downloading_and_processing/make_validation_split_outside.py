@@ -6,7 +6,6 @@ import math
 import sys
 
 def pick_dirs_for_split(src_dir: Path, percent: float, rng: random.Random):
-    """Returns the list of folders selected for the split"""
     if not src_dir.exists():
         raise FileNotFoundError(f"Source not found: {src_dir}")
     video_dirs = [d for d in src_dir.iterdir() if d.is_dir()]

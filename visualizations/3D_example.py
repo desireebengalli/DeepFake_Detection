@@ -26,7 +26,7 @@ TEST_REAL_DIR = "/home/giadapoloni/C_validation/C_real"
 TEST_FAKE_DIR = "/home/giadapoloni/C_validation/C_fake"
 
 SAVE_PATH = "/home/giadapoloni/results2/CLIP5_ln_bias_linear_notext/clip5_linear_ln_bias_notext.pt"
-FIG_SAVE_PATH = "/home/desireebengalli/3D_example"
+FIG_SAVE_PATH = "/home/giadapoloni/visualizations/3D_example"
 
 IMG_EXTS = {".jpg"} 
 
@@ -125,14 +125,14 @@ def visualize_one_real_one_fake_video_3d(
     real_vids, fake_vids, video_frames, _ = build_video_index()
 
     if len(real_vids) == 0 or len(fake_vids) == 0:
-        print("Non ci sono abbastanza video real/fake.")
+        print("Not enough real/fake videos found.")
         return
 
     real_vid = random.choice(real_vids)
     fake_vid = random.choice(fake_vids)
 
-    print("Video REAL scelto:", real_vid)
-    print("Video FAKE scelto:", fake_vid)
+    print("Video REAL chosen:", real_vid)
+    print("Video FAKE chosen:", fake_vid)
 
     # Computing embeddings
     emb_real, frames_real = compute_frame_embeddings_for_video_no_aug(
@@ -143,7 +143,7 @@ def visualize_one_real_one_fake_video_3d(
     )
 
     if emb_real is None or emb_fake is None:
-        print("Errore: nessun frame valido trovato.")
+        print("Error: no valid frames found.")
         return
 
     # PCA on frames
@@ -185,7 +185,7 @@ def visualize_one_real_one_fake_video_3d(
     ax.set_xlabel("PC1")
     ax.set_ylabel("PC2")
     ax.set_zlabel("PC3")
-    ax.set_title("3D PCA dei frame: REAL vs FAKE")
+    ax.set_title("3D PCA of frames: REAL vs FAKE")
 
     ax.legend(loc="best")
     plt.tight_layout()
@@ -193,7 +193,7 @@ def visualize_one_real_one_fake_video_3d(
     if save_path is not None:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=200, bbox_inches="tight")
-        print(f"Figura salvata in: {save_path}")
+        print(f"Saved in: {save_path}")
 
     plt.show()
 

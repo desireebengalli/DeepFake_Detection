@@ -256,7 +256,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
             if video_id not in per_video_labels:
                 per_video_labels[video_id] = int(lab)
 
-    # ---- frame-level metrics ----
+    # frame-level metrics
     y_true_arr = np.array(y_true, dtype=int)
     prob_fake_arr = np.array(prob_fake, dtype=float)
     y_pred_arr = (prob_fake_arr >= 0.5).astype(int)
@@ -287,7 +287,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         "threshold": 0.5,
     }
 
-    # ---- video-level metrics ----
+    # video-level metrics
     video_ids = sorted(per_video_probs.keys())
     if len(video_ids) == 0:
         video_metrics = None
@@ -330,7 +330,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         }
 
     if verbose:
-        print("===== GLOBAL METRICS (per-FRAME) =====")
+        print("GLOBAL METRICS (per-FRAME)")
         print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
         print(f"Precision: {frame_metrics['precision']:.4f}")
         print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -342,7 +342,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         print(f"TP={frame_metrics['TP']}  TN={frame_metrics['TN']}  FP={frame_metrics['FP']}  FN={frame_metrics['FN']}  N={frame_metrics['N']}")
 
         if video_metrics is not None:
-            print("===== GLOBAL METRICS (per-VIDEO, avg 32 frame) =====")
+            print("GLOBAL METRICS (per-VIDEO, avg 32 frame)")
             print(f"Videos   : {video_metrics['N_videos']}")
             print(f"Accuracy : {video_metrics['accuracy']:.4f}")
             print(f"Precision: {video_metrics['precision']:.4f}")
@@ -472,7 +472,7 @@ def train_and_eval():
             improved = current_auc_v > (best_auc_v + MIN_DELTA)
 
         if improved:
-            print("New best model (AUC). Savaing checkpoint...")
+            print("New best model (AUC). Saving checkpoint...")
             best_auc_v = current_auc_v
             best_epoch = epoch
             epochs_no_improve = 0

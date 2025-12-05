@@ -233,7 +233,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
         }
 
     if verbose:
-        print("===== GLOBAL METRICS (per-FRAME) =====")
+        print("GLOBAL METRICS (per-FRAME)")
         print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
         print(f"Precision: {frame_metrics['precision']:.4f}")
         print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -248,7 +248,7 @@ def evaluate(clip_model, head, data_loader, device, text_bank, video_threshold=0
         )
 
         if video_metrics is not None:
-            print("===== GLOBAL METRICS (per-VIDEO, avg 32 frame) =====")
+            print("GLOBAL METRICS (per-VIDEO, avg 32 frame)")
             print(f"Videos   : {video_metrics['N_videos']}")
             print(f"Accuracy : {video_metrics['accuracy']:.4f}")
             print(f"Precision: {video_metrics['precision']:.4f}")
@@ -281,22 +281,17 @@ def main():
     clip_model, preprocess = clip.load(model_name, device=DEVICE, jit=False)
     clip_model.float()
 
-    # load LN-tuned visual encoder
     clip_model.visual.load_state_dict(ckpt["visual"])
 
-    # freeze all params (inference only)
     for p in clip_model.parameters():
         p.requires_grad = False
 
     embed_dim = clip_model.visual.output_dim
     head = LinearHead(embed_dim, n_classes=2).to(DEVICE)
-    head.load_state_dict(ckpt["head"])  # this will now match fc.weight, fc.bias
+    head.load_state_dict(ckpt["head"]) 
 
-
-    # build text bank
     text_bank = build_text_bank(clip_model, DEVICE)
 
-    # build test loader
     test_loader = build_test_loader(preprocess)
 
     # evaluate

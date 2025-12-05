@@ -26,7 +26,6 @@ for src in src_dirs:
                 src_path = os.path.join(root, file)
                 dst_path = os.path.join(dst_dir, file)
 
-                # Evita conflitti di nomi duplicati
                 if os.path.exists(dst_path):
                     name, ext = os.path.splitext(file)
                     dst_path = os.path.join(dst_dir, f"{name}_{count}{ext}")
@@ -34,4 +33,4 @@ for src in src_dirs:
                 shutil.copy2(src_path, dst_path)
                 count += 1
 
-print(f"Copiate {count} immagini nella cartella {dst_dir}")
+print(f"Copied {count} images to folder {dst_dir}")

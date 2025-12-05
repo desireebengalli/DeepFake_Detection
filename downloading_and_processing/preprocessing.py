@@ -89,7 +89,6 @@ def out_dir_for(video_dir):
     out_dir = OUT_ROOT / root_tag / rel
     return out_dir
 
-# Core: processes a video folder
 def process_video_dir_with_app(video_dir, app):
     out_dir = out_dir_for(video_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,15 +187,12 @@ def main():
 
     if len(vdirs) == 0:
         print("[DEBUG] Content root:", os.listdir(root)[:10])
-        # ispeziona una sottocartella a caso, se esiste
         subs = [os.path.join(root, d) for d in os.listdir(root) if os.path.isdir(os.path.join(root,d))]
         if subs:
             samp = subs[0]
             print("[DEBUG] Example subfolder:", samp)
             print("[DEBUG] Example file:", os.listdir(samp)[:10])
 
-
-    # 4) Processo singolo (ottimo per GPU; evita contention sulla VRAM)
     total_ok = total_fail = total_vids = 0
     for vd in all_vdirs:
         ok, fail = process_video_dir_with_app(vd, app)

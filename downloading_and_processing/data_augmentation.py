@@ -27,7 +27,6 @@ def scan_ctx_images(roots: List[str]) -> List[Path]:
     return imgs
 
 def compute_rel_parent(src_path: Path, first_root: Path, strip_prefix: str) -> Path:
-    """Return parent path of src relative to strip_prefix (if set) or first_root."""
     if strip_prefix:
         try:
             return src_path.parent.resolve().relative_to(Path(strip_prefix).resolve())
@@ -98,7 +97,7 @@ def augment_and_save(src_path: Path, out_root: Path, variants: int, jpg_quality:
     rel_parent = compute_rel_parent(src_path, first_root, strip_prefix)
     written = 0
     for k in range(variants):
-        dst_path = build_dst(out_root, rel_parent, base, k)
+        dst_path = build_dst_outroot(out_root, rel_parent, base, k)
         if dst_path.exists():
             continue
         out_img = aug(img)
@@ -133,7 +132,7 @@ def main():
     out_root = Path(args.out_root).resolve() if args.out_root else None
     if not args.in_place:
         if out_root is None:
-            raise SystemExit("--out-root è richiesto se non usi --in-place.")
+            raise SystemExit("--out-root is required if you don't use --in-place.")
         out_root.mkdir(parents=True, exist_ok=True)
 
     aug = make_aug_pipeline()

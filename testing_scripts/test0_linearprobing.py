@@ -44,10 +44,6 @@ IMG_EXTS = {".jpg"}
 # MODEL
 
 class LinearHead(nn.Module):
-    """
-    Simple linear classifier on top of CLIP visual features.
-    Input: L2-normalized features from CLIP visual encoder.
-    """
     def __init__(self, in_dim, n_classes=2):
         super().__init__()
         self.fc = nn.Linear(in_dim, n_classes)
@@ -59,9 +55,6 @@ class LinearHead(nn.Module):
 # DATASET / LOADER 
 
 def collect_test_items(real_dir, fake_dir):
-    """
-    Collect all frame paths from real and fake test directories.
-    """
     items = []
     for root, label in [(real_dir, 0), (fake_dir, 1)]:
         rroot = Path(root)
@@ -74,10 +67,6 @@ def collect_test_items(real_dir, fake_dir):
 
 
 class TestFrameDataset(Dataset):
-    """
-    Dataset for test frames.
-    Returns: (image_tensor, label, path_str)
-    """
     def __init__(self, items, preprocess):
         self.items = items
         self.preprocess = preprocess
@@ -114,9 +103,6 @@ def build_test_loader(preprocess, real_dir, fake_dir):
 
 @torch.no_grad()
 def extract_features(clip_model, imgs):
-    """
-    Encode images with CLIP visual encoder and apply L2 normalization.
-    """
     z = clip_model.encode_image(imgs)
     z = F.normalize(z, dim=-1)
     return z
@@ -124,9 +110,6 @@ def extract_features(clip_model, imgs):
 
 @torch.no_grad()
 def predict_batch(clip_model, head, imgs):
-    """
-    Forward pass for a batch: CLIP visual encoder -> L2 norm -> Linear head.
-    """
     z = extract_features(clip_model, imgs)
     logits = head(z)
     return logits
@@ -136,12 +119,6 @@ def predict_batch(clip_model, head, imgs):
 
 @torch.no_grad()
 def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
-    """
-    Evaluate on test set:
-      - frame-level metrics
-      - video-level metrics (avg prob_fake over up to 32 frames per video)
-    Video id is defined as the parent directory of each frame.
-    """
     clip_model.eval()
     head.eval()
 
@@ -258,7 +235,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
         }
 
     # print
-    print("===== GLOBAL METRICS (frame-level) =====")
+    print("GLOBAL METRICS (frame-level)")
     print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
     print(f"Precision: {frame_metrics['precision']:.4f}")
     print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -273,7 +250,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5):
     )
 
     if video_metrics is not None:
-        print("===== GLOBAL METRICS (video-level, avg 32 frames) =====")
+        print("GLOBAL METRICS (video-level, avg 32 frames)")
         print(f"Videos   : {video_metrics['N_videos']}")
         print(f"Accuracy : {video_metrics['accuracy']:.4f}")
         print(f"Precision: {video_metrics['precision']:.4f}")

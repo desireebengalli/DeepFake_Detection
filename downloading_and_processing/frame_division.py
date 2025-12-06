@@ -40,7 +40,7 @@ def ensure_dir(p: Path):
 def list_videos_in_dir(dir_path: str) -> List[str]:
     paths: List[str] = []
     if not os.path.isdir(dir_path):
-        print(f"[WARN] Directory non trovata: {dir_path}")
+        print(f"[WARN] Directory not found: {dir_path}")
         return paths
     for ext in VIDEO_EXTS:
         pattern = os.path.join(dir_path, f"*{ext}")
@@ -76,7 +76,6 @@ def safe_remove(video_path: str):
         print(f"[REMOVED] {video_path}")
 
 def out_subdir_for(label: str) -> Path:
-    """Mappa le label in cartelle di output."""
     if label.lower() == "original":
         return OUT / "C_real"
     return OUT / "C_fake"
@@ -178,7 +177,7 @@ def process_dir(dir_path: str, label: str):
             print(f"[ERROR] {vpath}: {e}, keeping video.")
             return ("err", vpath)
 
-    print(f"{label}: trovati {len(videos)} video in {dir_path}")
+    print(f"{label}: found {len(videos)} video in {dir_path}")
     if not videos:
         return
 

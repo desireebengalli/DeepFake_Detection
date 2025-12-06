@@ -28,10 +28,11 @@ def move_or_copy_dir(src: Path, dst_root: Path, mode: str):
     elif mode == "copy":
         shutil.copytree(src, dst)
     else:
-        raise ValueError("--mode can't be 'move' or 'copy'")
+        raise ValueError("--mode must be either 'move' or 'copy'")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Crea /home/giadapoloni/C_validation moving/copying a percentage of videos.")
+    parser = argparse.ArgumentParser(description="Create /home/giadapoloni/C_validation moving/copying a percentage of videos.")
     parser.add_argument("--root", type=Path, default=Path("/home/giadapoloni/C_preprocessed_frames"), help="Directory that contains C_real and C_fake.")
     parser.add_argument("--percent", type=float, default=0.15, help="Percentage (0..1) of folders to put in validation.")
     parser.add_argument("--mode", choices=["move", "copy"], default="move", help="Move or copy the folders.")
@@ -90,7 +91,7 @@ def main():
             print(f" - {d}: {e}", file=sys.stderr)
         sys.exit(2)
     else:
-        print("Completed wiuthout errors.")
+        print("Completed without errors.")
 
 if __name__ == "__main__":
     main()

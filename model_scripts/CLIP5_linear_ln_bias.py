@@ -552,7 +552,7 @@ def train_and_eval():
         os.makedirs(os.path.dirname(RESULTS_CSV_AUC_PER_EPOCH), exist_ok=True)
         df_auc = pd.DataFrame(epoch_auc_history)
         df_auc.to_csv(RESULTS_CSV_AUC_PER_EPOCH, index=False)
-        print(f"✓ Salvato CSV AUC per-epoch in {RESULTS_CSV_AUC_PER_EPOCH}")
+        print(f"Saved CSV AUC per-epoch in {RESULTS_CSV_AUC_PER_EPOCH}")
 
     print(f"\nTraining ended. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
 

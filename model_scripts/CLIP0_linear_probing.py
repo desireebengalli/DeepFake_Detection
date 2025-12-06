@@ -468,7 +468,6 @@ def train_and_eval():
             current_auc_v = video_m["auc_roc"]
             print(f"[Val] Epoch {epoch} - video AUC: {current_auc_v:.4f}")
 
-            # miglioramento "reale" solo se supera best + min_delta
             improved = current_auc_v > (best_auc_v + MIN_DELTA)
 
         if improved:
@@ -492,14 +491,13 @@ def train_and_eval():
                 print("Early stopping")
                 break
 
-        # per la epoch successiva: head in train, CLIP rimane eval (frozen)
         clip_model.eval()
         head.train()
 
     print(f"\nTraining ended. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
 
     # TEST 
-    print("Reloading best checkpoint e computing final metrics...")
+    print("Reloading best checkpoint and computing final metrics...")
     ckpt = torch.load(SAVE_PATH, map_location=DEVICE)
     head.load_state_dict(ckpt["head"])
     clip_model.visual.load_state_dict(ckpt["visual"])

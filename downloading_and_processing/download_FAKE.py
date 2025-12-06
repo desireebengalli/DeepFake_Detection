@@ -1,6 +1,5 @@
 import os, random, shutil
 
-# Percorsi
 source_dir = "/home/giadapoloni/gdrive/CV Group Project/Celeb-DF-v2/Celeb-synthesis"
 target_dir = "/home/giadapoloni/dataset"
 
@@ -16,6 +15,6 @@ selected = random.sample(files, len(files)//2)
 for i, f in enumerate(selected, 1):
     shutil.copy(os.path.join(source_dir, f), os.path.join(target_dir, f))
     if i % 10 == 0 or i == len(selected):
-        print(f"Copiati {i}/{len(selected)} file...")
+        print(f"Copied {i}/{len(selected)} file...")
 
 print(f"\n Copied {len(selected)} videos on {target_dir}")

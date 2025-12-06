@@ -13,7 +13,7 @@ from sklearn.metrics import roc_auc_score
 MODEL_NAME = "ViT-B/16"
 EPOCHS = 2
 BATCH_SIZE = 16
-ACCUM_STEPS = 8             # effettivo 128
+ACCUM_STEPS = 8             # effective 128
 NUM_WORKERS = 4
 
 # LRs and scheduler
@@ -514,13 +514,13 @@ def train_and_eval():
         verbose=True
     )
 
-    # Salvataggio CSV (frame-level)
+    # Saving CSV (frame-level)
     os.makedirs(os.path.dirname(RESULTS_CSV_METRICS), exist_ok=True)
     metrics_df = pd.DataFrame([frame_metrics])
     metrics_df.to_csv(RESULTS_CSV_METRICS, index=False)
     print(f"CSV with frame metrics saved in {RESULTS_CSV_METRICS_VIDEO}")
 
-    # Salvataggio CSV (video-level)
+    # Saving CSV (video-level)
     if video_metrics is not None:
         os.makedirs(os.path.dirname(RESULTS_CSV_METRICS_VIDEO), exist_ok=True)
         metrics_vid_df = pd.DataFrame([video_metrics])

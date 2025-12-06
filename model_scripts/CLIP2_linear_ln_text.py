@@ -520,13 +520,11 @@ def train_and_eval():
                 print("Early stopping - Stop training.")
                 break
 
-        # se continuiamo, rimettiamo in train per epoch successiva
         clip_model.visual.train()
         head.train()
 
     print(f"\nTraining ended. Best epoch = {best_epoch}, best video AUC = {best_auc_v:.4f}")
 
-    # ----- TEST FINALE sul best checkpoint -----
     print("Reloading the best checkpoint and evaluate final metrics...")
     ckpt = torch.load(SAVE_PATH, map_location=DEVICE)
     head.load_state_dict(ckpt["head"])

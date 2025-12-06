@@ -401,7 +401,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         }
 
     if verbose:
-        print("===== GLOBAL METRICS (per-FRAME) =====")
+        print("GLOBAL METRICS (per-FRAME)")
         print(f"Accuracy : {frame_metrics['accuracy']:.4f}")
         print(f"Precision: {frame_metrics['precision']:.4f}")
         print(f"Recall   : {frame_metrics['recall']:.4f}")
@@ -413,7 +413,7 @@ def evaluate(clip_model, head, data_loader, device, video_threshold=0.5, verbose
         print(f"TP={frame_metrics['TP']}  TN={frame_metrics['TN']}  FP={frame_metrics['FP']}  FN={frame_metrics['FN']}  N={frame_metrics['N']}")
 
         if video_metrics is not None:
-            print("===== GLOBAL METRICS (per-VIDEO, avg 32 frame) =====")
+            print("GLOBAL METRICS (per-VIDEO, avg 32 frame)")
             print(f"Videos   : {video_metrics['N_videos']}")
             print(f"Accuracy : {video_metrics['accuracy']:.4f}")
             print(f"Precision: {video_metrics['precision']:.4f}")

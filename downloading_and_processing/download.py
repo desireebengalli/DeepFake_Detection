@@ -71,10 +71,11 @@ def parse_args():
                         choices=SERVERS
                         )
     parser.add_argument('--fraction', type=float, default=1.0,
-                        help='Scarica una frazione casuale (0-1] dei file per ciascun dataset '
-                             '(applicata prima di --num_videos). Esempio: 0.5 = 50%.')
+        help='Download a random fraction (0–1] of the files for each dataset '
+            '(applied before --num_videos). Example: 0.5 = 50%.')
+
     parser.add_argument('--seed', type=int, default=None,
-                        help='Seed per rendere il campionamento riproducibile.')
+                        help='Seed to make the random sampling reproducible.')
     args = parser.parse_args()
 
     # URLs
@@ -199,16 +200,15 @@ def main(args):
                 filelist.append('_'.join(pair))
                 if c_type != 'models':
                     filelist.append('_'.join(pair[::-1]))
-        # Random subsampling per-dataset (se richiesto) – applicato prima di --num_videos
+        # Random subsampling per-dataset
         if args.fraction < 1.0 and (num_videos is None or num_videos <= 0):
             total_before = len(filelist)
             rng = random.Random(args.seed)
             k = max(1, int(round(total_before * args.fraction)))
             if k < total_before:
                 filelist = rng.sample(filelist, k)
-            print(f"[INFO] Selezionati {len(filelist)}/{total_before} (~{args.fraction*100:.1f}%).")
+            print(f"[INFO] Selected {len(filelist)}/{total_before} (~{args.fraction*100:.1f}%).")
 
-        # Maybe limit number of videos for download (ha la precedenza se impostato)
         if num_videos is not None and num_videos > 0:
             print('Downloading the first {} videos'.format(num_videos))
             filelist = filelist[:num_videos]
@@ -218,7 +218,7 @@ def main(args):
         dataset_videos_url = args.base_url + '{}/{}/{}/'.format(
             dataset_path, c_compression, c_type)
         dataset_mask_url = args.base_url + '{}/{}/videos/'.format(
-            dataset_path, 'masks', c_type)
+            dataset_path, 'masks')
 
         if c_type == 'videos':
             dataset_output_path = join(output_path, dataset_path, c_compression,

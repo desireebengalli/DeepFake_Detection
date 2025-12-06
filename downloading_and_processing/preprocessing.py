@@ -53,7 +53,7 @@ def quality_scores(crop):
 
 def list_video_dirs(root):
     if not os.path.isdir(root):
-        print(f"[WARN] Root non trovata: {root}")
+        print(f"[WARN] Root not found: {root}")
         return []
     out = []
     for name in sorted(os.listdir(root)):
@@ -95,7 +95,7 @@ def process_video_dir_with_app(video_dir, app):
     meta_path = out_dir / "meta.json"
 
     if meta_path.exists():
-        print(f"[SKIP] {video_dir} (meta.json trovato)")
+        print(f"[SKIP] {video_dir} (meta.json found)")
         return 0, 0
 
     frames = sorted([p for ext in IMG_PATTERNS for p in glob.glob(os.path.join(video_dir, ext))])
@@ -159,9 +159,10 @@ def main():
     providers = ort.get_available_providers()
     use_gpu = "CUDAExecutionProvider" in providers
     if not use_gpu:
-        print("[WARN] CUDAExecutionProvider NON disponibile; userò CPUExecutionProvider.")
+        print("[WARN] CUDAExecutionProvider not available; using CPUExecutionProvider instead.")
     else:
         print("[INFO] ONNX providers:", providers)
+
 
     app = FaceAnalysis(name="buffalo_l", allowed_modules=['detection'])
     app.prepare(ctx_id=(0 if use_gpu else -1), det_thresh=DET_THRESH, det_size=(640, 640))
@@ -175,7 +176,7 @@ def main():
             out_dir = out_dir_for(vd)
             meta_path = out_dir / "meta.json"
             if meta_path.exists():
-                print(f"[SKIP] {vd} (meta.json trovato)")
+                print(f"[SKIP] {vd} (meta.json found)")
                 continue
             all_vdirs.append(vd)
 

@@ -468,7 +468,7 @@ def train_and_eval():
         )
 
         if video_m is None or np.isnan(video_m["auc_roc"]):
-            print("No video o NaN video AUC in validation, skipping early stopping for this epoch.")
+            print("No video or NaN video AUC in validation, skipping early stopping for this epoch.")
             current_auc_v = float("nan")
             improved = False
         else:

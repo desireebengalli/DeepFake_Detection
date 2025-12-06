@@ -108,10 +108,10 @@ def augment_and_save(src_path: Path, out_root: Path, variants: int, jpg_quality:
 def parse_args():
     ap = argparse.ArgumentParser(description="Augment ONLY *_ctx.jpg (CPU).")
     ap.add_argument("--in-roots", nargs="+", required=True,
-                    help="Una o più radici da cui cercare ricorsivamente *_ctx.jpg.")
-    ap.add_argument("--out-root", default="", help="Root di output (ignorata se --in-place).")
+                    help="One or more root directories from which to recursively search for _ctx.jpg.")
+    ap.add_argument("--out-root", default="", help="Output root (ignored if inplace)")
     ap.add_argument("--in-place", action="store_true",
-                    help="Scrive i file augmented nella STESSA cartella del sorgente.")
+                    help="Outputs the augmented files to the SAME directory as the source.")
     ap.add_argument("--variants-per-image", type=int, default=2)
     ap.add_argument("--jpg-quality", type=int, default=92)
     ap.add_argument("--workers", type=int, default=min(8, (os.cpu_count() or 8)))

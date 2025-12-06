@@ -1,0 +1,2 @@
+accuracy,precision,recall,f1,auc_roc,TP,TN,FP,FN,N_videos,threshold,frames_per_video_avg
+0.826171875,0.8261718749999983,0.9999999999999976,0.9048128342241014,0.6621244720694877,423,0,89,0,512,0.5,32

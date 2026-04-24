@@ -1,2 +1,2 @@
 # DeepFake_Detection
-Group Project for Deep Learning for Computer Vision
+Group Project for the course of Deep Learning for Computer Vision
